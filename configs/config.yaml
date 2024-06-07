@@ -1,0 +1,5 @@
+bybit:
+  APIKey: PRGNl9kTCjhjSxgpHn
+  APISecret: OZGGFEov7tf8KrKI6TonClt1r1GZzF5QbzWh
+  WSAddress: wss://stream.bybit.com/v5/public/linear
+  WSAddressTestnet: wss://stream-testnet.bybit.com/v5/public/linear
