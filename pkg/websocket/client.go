@@ -61,7 +61,7 @@ func (c *WebSocketClient) readPump() {
 			log.Println("Failed to read message:", err)
 			return
 		}
-		handler.Receive(string(message))
+		go handler.Receive(message)
 	}
 }
 
