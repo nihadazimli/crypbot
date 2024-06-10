@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	BybitCreds APICredentialsConfig `yaml:"bybit"`
+	Topics     []string             `yaml:"topics"`
 }
 
 type APICredentialsConfig struct {

@@ -18,8 +18,6 @@ type WebSocketClient struct {
 func Serve() {
 	cfg := config.GetConfig()
 
-	topic := []string{"kline.15.BTCUSDT", "kline.15.ETHUSDT"}
-
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
 
 	if err != nil {
@@ -35,7 +33,7 @@ func Serve() {
 
 	fmt.Println("Connected.")
 
-	c.subscribe(topic)
+	c.subscribe(cfg.Topics)
 	c.readPump()
 
 }
