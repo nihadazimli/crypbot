@@ -63,6 +63,8 @@ func (c *WebSocketClient) readPump() {
 			return
 		}
 		go handler.Receive(message)
+		go handler.CalculateRSI()
+		//go handler.Show()
 	}
 }
 
