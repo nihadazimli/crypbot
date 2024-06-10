@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 
@@ -17,7 +18,21 @@ type APICredentialsConfig struct {
 	WSAddress string `yaml:"WSAddress"`
 }
 
-func LoadConfig() (*Config, error) {
+var cfg *Config
+
+func GetConfig() *Config {
+	if cfg == nil {
+		var err error
+		cfg, err = loadConfigFromYaml()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	return cfg
+}
+
+func loadConfigFromYaml() (*Config, error) {
 	configPath := filepath.Join("configs", "config.yaml")
 
 	f, err := os.Open(configPath)
@@ -26,11 +41,11 @@ func LoadConfig() (*Config, error) {
 	}
 	defer f.Close()
 
-	var cfg Config
+	var config Config
 	decoder := yaml.NewDecoder(f)
-	if err = decoder.Decode(&cfg); err != nil {
+	if err = decoder.Decode(&config); err != nil {
 		return nil, err
 	}
 
-	return &cfg, nil
+	return &config, nil
 }

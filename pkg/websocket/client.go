@@ -16,11 +16,15 @@ type WebSocketClient struct {
 }
 
 func Serve() {
-	cfg, _ := config.LoadConfig()
+	cfg := config.GetConfig()
 
 	topic := []string{"kline.15.BTCUSDT", "kline.15.ETHUSDT"}
 
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
+
+	if err != nil {
+		log.Fatal("Failed to dial:", err)
+	}
 
 	c := &WebSocketClient{conn: conn}
 
