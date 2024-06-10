@@ -1,8 +1,11 @@
 package main
 
-import "github.com/nihadazimli/crypbot/pkg/websocket"
+import (
+	"github.com/nihadazimli/crypbot/internal/config"
+	"github.com/nihadazimli/crypbot/pkg/websocket"
+)
 
 func main() {
-
-	websocket.Serve()
+	cfg := config.GetConfig()
+	websocket.Serve(cfg)
 }
