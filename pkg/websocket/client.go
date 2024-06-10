@@ -15,8 +15,7 @@ type WebSocketClient struct {
 	conn *websocket.Conn
 }
 
-func Serve() {
-	cfg := config.GetConfig()
+func Serve(cfg *config.Config) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
 

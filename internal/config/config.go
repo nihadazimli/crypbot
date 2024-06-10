@@ -24,7 +24,7 @@ var cfg *Config
 func GetConfig() *Config {
 	if cfg == nil {
 		var err error
-		cfg, err = loadConfigFromYaml()
+		cfg, err = loadFromYaml()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -33,7 +33,7 @@ func GetConfig() *Config {
 	return cfg
 }
 
-func loadConfigFromYaml() (*Config, error) {
+func loadFromYaml() (*Config, error) {
 	configPath := filepath.Join("configs", "config.yaml")
 
 	f, err := os.Open(configPath)
