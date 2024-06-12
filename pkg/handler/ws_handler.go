@@ -20,6 +20,6 @@ func Receive(message []byte) {
 			Close:   kline.Close,
 			Confirm: kline.Confirm,
 		}
-		financial.ProcesssKline(internalKline)
+		go financial.ProcesssKline(internalKline)
 	}
 }
