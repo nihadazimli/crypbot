@@ -3,6 +3,7 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/nihadazimli/crypbot/pkg/financial"
 	"log"
 	"time"
 
@@ -63,8 +64,8 @@ func (c *WebSocketClient) readPump() {
 			return
 		}
 		go handler.Receive(message)
-		go handler.CalculateRSI()
-		//go handler.Show()
+		go financial.CalculateRSI()
+		//go financial.Show()
 	}
 }
 
