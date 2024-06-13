@@ -1,45 +1,59 @@
 package financial
 
 import (
-	"fmt"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
 	"sync"
 )
 
 var (
-	klineDataMap = make(map[string][]float64)
-	RSIDataMap   = make(map[string]float64)
-	RSIReady     = make(chan string, 5)
-	buyReady     = make(chan string, 5)
-	mapMutex     sync.Mutex
+	mapMutex sync.Mutex
 )
 
-func ProcesssKline(klineDatapoint model.InternalKline) {
-
-	if !(klineDatapoint.Confirm) {
-		if _, exists := klineDataMap[klineDatapoint.Topic]; !exists {
-			klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
-		}
-		klineData := append(klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
-		mapMutex.Lock()
-		if len(klineData) > 15 {
-			klineData = klineData[len(klineData)-15:]
-			klineDataMap[klineDatapoint.Topic] = klineData
-			RSIReady <- klineDatapoint.Topic
-		}
-		klineDataMap[klineDatapoint.Topic] = klineData
-		mapMutex.Unlock()
-
-	}
-
+type Client struct {
+	klineDataMap  map[string][]float64
+	RSIDataMap    map[string]float64
+	rsiReady      chan string
+	buyReady      chan string
+	klineReceived chan model.InternalKline
 }
 
-func CalculateRSI() {
+func NewFinancialClient(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Client {
+	return &Client{
+		klineDataMap:  make(map[string][]float64),
+		RSIDataMap:    make(map[string]float64),
+		klineReceived: klineReceived,
+		rsiReady:      rsiReady,
+		buyReady:      buyReady,
+	}
+}
 
-	for topic := range RSIReady {
+func (fc *Client) ProcessKline() {
+
+	for klineDatapoint := range fc.klineReceived {
+		if !(klineDatapoint.Confirm) {
+			if _, exists := fc.klineDataMap[klineDatapoint.Topic]; !exists {
+				fc.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+			}
+			klineData := append(fc.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+			mapMutex.Lock()
+			if len(klineData) > 15 {
+				klineData = klineData[len(klineData)-15:]
+				fc.klineDataMap[klineDatapoint.Topic] = klineData
+				fc.rsiReady <- klineDatapoint.Topic
+			}
+			fc.klineDataMap[klineDatapoint.Topic] = klineData
+			mapMutex.Unlock()
+
+		}
+	}
+}
+
+func (fc *Client) CalculateRSI() {
+
+	for topic := range fc.rsiReady {
 		mapMutex.Lock()
-		klineData, exists := klineDataMap[topic]
+		klineData, exists := fc.klineDataMap[topic]
 		mapMutex.Unlock()
 		if !exists || len(klineData) < 15 {
 			log.Println("Insufficient data to calculate RSI for topic:", topic)
@@ -48,9 +62,11 @@ func CalculateRSI() {
 
 		rsi := calculateRSI(klineData, 14)
 		mapMutex.Lock()
-		RSIDataMap[topic] = rsi
-		fmt.Println("RSIDataMap:", RSIDataMap)
+		fc.RSIDataMap[topic] = rsi
 		mapMutex.Unlock()
+		if rsi <= 20.0 {
+			fc.buyReady <- topic
+		}
 	}
 }
 
@@ -59,7 +75,7 @@ func CalculateRSI() {
 //		mapMutex.Lock()
 //
 //		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range klineDataMap {
+//		for topic, prices := range fc.klineDataMap {
 //			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
 //		}
 //		mapMutex.Unlock()
