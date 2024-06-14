@@ -31,7 +31,9 @@ func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan st
 func (fe *Engine) ProcessKline() {
 
 	for klineDatapoint := range fe.klineReceived {
-		if !(klineDatapoint.Confirm) {
+		if klineDatapoint.Confirm {
+			continue // Closed Kline logic is not implemented yet
+		} else { // Calculate Live kline for debugging for now
 
 			if _, exists := fe.klineDataMap[klineDatapoint.Topic]; !exists {
 				fe.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
@@ -74,7 +76,12 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
 	rsi := calculateRSI(klineData, 14)
 
 	mapMutex.Lock()
-	fe.RSIDataMap[topic] = rsi
+	newMap := make(map[string]float64)
+	for k, v := range fe.RSIDataMap {
+		newMap[k] = v
+	}
+	newMap[topic] = rsi
+	fe.RSIDataMap = newMap
 	mapMutex.Unlock()
 
 	return rsi, true
@@ -104,11 +111,13 @@ func calculateRSI(prices []float64, n int) float64 {
 		return 0 // Not enough data to compute RSI
 	}
 
+	//Compute changes for gains and losses
 	changes := make([]float64, len(prices)-1)
 	for i := 1; i < len(prices); i++ {
 		changes[i-1] = prices[i] - prices[i-1]
 	}
 
+	// We need gains and losses to calculate RSI, if gain or loss smaller than 0 we take it as 0
 	gains := make([]float64, len(changes))
 	losses := make([]float64, len(changes))
 	for i, change := range changes {
@@ -121,6 +130,7 @@ func calculateRSI(prices []float64, n int) float64 {
 		}
 	}
 
+	//Calculate exponential moving average for gains and losses
 	avgGain := ema(gains, n)
 	avgLoss := ema(losses, n)
 
@@ -132,6 +142,7 @@ func calculateRSI(prices []float64, n int) float64 {
 		return 0 // No gains and no losses
 	}
 
+	// Calculate RSI
 	rs := avgGain[len(avgGain)-1] / avgLoss[len(avgLoss)-1]
 	rsi := 100 - (100 / (1 + rs))
 
