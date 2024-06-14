@@ -10,6 +10,10 @@ var (
 	mapMutex sync.Mutex
 )
 
+const (
+	RequiredKlineThreshold = 15
+)
+
 type Engine struct {
 	klineDataMap  map[string][]float64
 	RSIDataMap    map[string]float64
@@ -33,25 +37,25 @@ func (fe *Engine) ProcessKline() {
 	for klineDatapoint := range fe.klineReceived {
 		if klineDatapoint.Confirm {
 			continue // Closed Kline logic is not implemented yet
-		} else { // Calculate Live kline for debugging for now
-
-			if _, exists := fe.klineDataMap[klineDatapoint.Topic]; !exists {
-				fe.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
-			}
-
-			klineData := append(fe.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
-
-			mapMutex.Lock()
-			if len(klineData) > 15 {
-				klineData = klineData[len(klineData)-15:]
-				fe.klineDataMap[klineDatapoint.Topic] = klineData
-				fe.rsiReady <- klineDatapoint.Topic
-			}
-
-			fe.klineDataMap[klineDatapoint.Topic] = klineData
-			mapMutex.Unlock()
-
 		}
+		// Calculate Live kline for debugging for now
+		if _, exists := fe.klineDataMap[klineDatapoint.Topic]; !exists {
+			fe.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+		}
+
+		klineData := append(fe.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+
+		mapMutex.Lock()
+		if len(klineData) > RequiredKlineThreshold {
+			// Keep only latest RequiredKlineThreshold number of records
+			klineData = klineData[len(klineData)-RequiredKlineThreshold:]
+			fe.klineDataMap[klineDatapoint.Topic] = klineData
+			fe.rsiReady <- klineDatapoint.Topic
+		}
+
+		fe.klineDataMap[klineDatapoint.Topic] = klineData
+		mapMutex.Unlock()
+
 	}
 }
 
@@ -68,12 +72,12 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
 	klineData, exists := fe.klineDataMap[topic]
 	mapMutex.Unlock()
 
-	if !exists || len(klineData) < 15 {
+	if canCalculateRSI(exists, klineData) {
 		log.Println("Insufficient data to calculate RSI for topic:", topic)
 		return 0, false
 	}
 
-	rsi := calculateRSI(klineData, 14)
+	rsi := calculateRSI(klineData, RequiredKlineThreshold-1) //To get only latest RSI
 
 	mapMutex.Lock()
 	newMap := make(map[string]float64)
@@ -161,4 +165,8 @@ func ema(values []float64, n int) []float64 {
 	}
 
 	return emaValues
+}
+
+func canCalculateRSI(exists bool, klineData []float64) bool {
+	return !exists || len(klineData) < RequiredKlineThreshold
 }
