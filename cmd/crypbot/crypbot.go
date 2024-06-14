@@ -16,14 +16,15 @@ func main() {
 	buyReady := make(chan string, len(cfg.Topics)+1)
 
 	go websocket.Serve(cfg, klineReceived)
-	fc := financial.NewFinancialClient(klineReceived, rsiReady, buyReady)
 
-	go fc.ProcessKline()
-	go fc.CalculateRSI()
+	fe := financial.NewFinancialEngine(klineReceived, rsiReady, buyReady)
+
+	go fe.ProcessKline()
+	go fe.ProcessRSI()
 
 	tc := trader.NewTraderClient(buyReady)
 
-	go tc.ProcessBuySignal(fc)
+	go tc.ProcessBuySignal(fe)
 	select {}
 
 }

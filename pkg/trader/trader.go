@@ -19,7 +19,7 @@ func NewTraderClient(buyReady chan string) *Client {
 	}
 }
 
-func (tc *Client) ProcessBuySignal(fc *financial.Client) {
+func (tc *Client) ProcessBuySignal(fc *financial.Engine) {
 	for topic := range tc.buyReady {
 		if fc.RSIDataMap[topic] > 20.0 {
 			log.Fatal("RSIDataMap too big")
@@ -39,7 +39,7 @@ func (tc *Client) buy(coinSymbol string) {
 
 }
 
-func (tc *Client) ProcessSell(fc *financial.Client, coinSymbol string, stop_loss float64) {
+func (tc *Client) ProcessSell(fc *financial.Engine, coinSymbol string, stop_loss float64) {
 	//if !(slices.Contains(tc.positions, coinSymbol)) {
 	//
 	//}

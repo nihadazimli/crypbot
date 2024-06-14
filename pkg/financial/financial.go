@@ -10,7 +10,7 @@ var (
 	mapMutex sync.Mutex
 )
 
-type Client struct {
+type Engine struct {
 	klineDataMap  map[string][]float64
 	RSIDataMap    map[string]float64
 	rsiReady      chan string
@@ -18,8 +18,8 @@ type Client struct {
 	klineReceived chan model.InternalKline
 }
 
-func NewFinancialClient(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Client {
-	return &Client{
+func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Engine {
+	return &Engine{
 		klineDataMap:  make(map[string][]float64),
 		RSIDataMap:    make(map[string]float64),
 		klineReceived: klineReceived,
@@ -28,45 +28,61 @@ func NewFinancialClient(klineReceived chan model.InternalKline, rsiReady chan st
 	}
 }
 
-func (fc *Client) ProcessKline() {
+func (fe *Engine) ProcessKline() {
 
-	for klineDatapoint := range fc.klineReceived {
+	for klineDatapoint := range fe.klineReceived {
 		if !(klineDatapoint.Confirm) {
-			if _, exists := fc.klineDataMap[klineDatapoint.Topic]; !exists {
-				fc.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+
+			if _, exists := fe.klineDataMap[klineDatapoint.Topic]; !exists {
+				fe.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
 			}
-			klineData := append(fc.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+
+			klineData := append(fe.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+
 			mapMutex.Lock()
 			if len(klineData) > 15 {
 				klineData = klineData[len(klineData)-15:]
-				fc.klineDataMap[klineDatapoint.Topic] = klineData
-				fc.rsiReady <- klineDatapoint.Topic
+				fe.klineDataMap[klineDatapoint.Topic] = klineData
+				fe.rsiReady <- klineDatapoint.Topic
 			}
-			fc.klineDataMap[klineDatapoint.Topic] = klineData
+
+			fe.klineDataMap[klineDatapoint.Topic] = klineData
 			mapMutex.Unlock()
 
 		}
 	}
 }
 
-func (fc *Client) CalculateRSI() {
-
-	for topic := range fc.rsiReady {
-		mapMutex.Lock()
-		klineData, exists := fc.klineDataMap[topic]
-		mapMutex.Unlock()
-		if !exists || len(klineData) < 15 {
-			log.Println("Insufficient data to calculate RSI for topic:", topic)
-			continue
+func (fe *Engine) ProcessRSI() {
+	for topic := range fe.rsiReady {
+		if rsi, ok := fe.calculatedAndStoreRSI(topic); ok {
+			fe.evaluateRSI(topic, rsi)
 		}
+	}
+}
 
-		rsi := calculateRSI(klineData, 14)
-		mapMutex.Lock()
-		fc.RSIDataMap[topic] = rsi
-		mapMutex.Unlock()
-		if rsi <= 20.0 {
-			fc.buyReady <- topic
-		}
+func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
+	mapMutex.Lock()
+	klineData, exists := fe.klineDataMap[topic]
+	mapMutex.Unlock()
+
+	if !exists || len(klineData) < 15 {
+		log.Println("Insufficient data to calculate RSI for topic:", topic)
+		return 0, false
+	}
+
+	rsi := calculateRSI(klineData, 14)
+
+	mapMutex.Lock()
+	fe.RSIDataMap[topic] = rsi
+	mapMutex.Unlock()
+
+	return rsi, true
+}
+
+func (fe *Engine) evaluateRSI(topic string, rsi float64) {
+	if rsi <= 20.0 {
+		fe.buyReady <- topic
 	}
 }
 
@@ -98,8 +114,10 @@ func calculateRSI(prices []float64, n int) float64 {
 	for i, change := range changes {
 		if change > 0 {
 			gains[i] = change
+			losses[i] = 0.0
 		} else {
 			losses[i] = -change
+			gains[i] = 0.0
 		}
 	}
 
