@@ -2,12 +2,10 @@ package main
 
 import (
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/pkg/console"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"github.com/nihadazimli/crypbot/pkg/trader"
 	"github.com/nihadazimli/crypbot/pkg/websocket"
-	"log"
 )
 
 func main() {
@@ -27,12 +25,6 @@ func main() {
 	tc := trader.NewTraderClient(buyReady)
 
 	go tc.ProcessBuySignal(fe)
-	go func() {
-		err := console.InitializeDashboard(fe)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
 	select {}
 
 }
