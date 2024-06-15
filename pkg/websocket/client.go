@@ -3,19 +3,20 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/pkg/handler"
 )
 
 type WebSocketClient struct {
-	conn *websocket.Conn
+	conn           *websocket.Conn
+	klineWriteChan chan model.InternalKline
 }
 
-func Serve(cfg *config.Config) {
+func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
 
@@ -23,7 +24,7 @@ func Serve(cfg *config.Config) {
 		log.Fatal("Failed to dial:", err)
 	}
 
-	c := &WebSocketClient{conn: conn}
+	c := &WebSocketClient{conn: conn, klineWriteChan: klineReceived}
 
 	if err != nil {
 		log.Fatal("Failed to connect:", err)
@@ -62,7 +63,7 @@ func (c *WebSocketClient) readPump() {
 			log.Println("Failed to read message:", err)
 			return
 		}
-		go handler.Receive(message)
+		go c.handle(message)
 	}
 }
 
@@ -74,5 +75,22 @@ func (c *WebSocketClient) keepAlive() {
 			return
 		}
 		time.Sleep(time.Second * 10)
+	}
+}
+
+func (c *WebSocketClient) handle(message []byte) {
+	var WSKline model.WSRawKline
+	err := json.Unmarshal(message, &WSKline)
+	if err != nil {
+		log.Println("Failed to unmarshal JSON:", err)
+		return
+	}
+	for _, kline := range WSKline.Data {
+		internalKline := model.InternalKline{
+			Topic:   WSKline.Topic,
+			Close:   kline.Close,
+			Confirm: kline.Confirm,
+		}
+		c.klineWriteChan <- internalKline
 	}
 }

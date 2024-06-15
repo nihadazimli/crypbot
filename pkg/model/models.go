@@ -20,3 +20,9 @@ type KlineData struct {
 	Confirm   bool    `json:"confirm"`
 	Interval  string  `json:"interval"`
 }
+
+type InternalKline struct {
+	Topic   string
+	Close   float64
+	Confirm bool
+}
