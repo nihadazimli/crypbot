@@ -15,7 +15,7 @@ const (
 )
 
 type Engine struct {
-	klineDataMap  map[string][]float64
+	KlineDataMap  map[string][]float64
 	RSIDataMap    map[string]float64
 	rsiReady      chan string
 	buyReady      chan string
@@ -24,7 +24,7 @@ type Engine struct {
 
 func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Engine {
 	return &Engine{
-		klineDataMap:  make(map[string][]float64),
+		KlineDataMap:  make(map[string][]float64),
 		RSIDataMap:    make(map[string]float64),
 		klineReceived: klineReceived,
 		rsiReady:      rsiReady,
@@ -39,21 +39,21 @@ func (fe *Engine) ProcessKline() {
 			continue // Closed Kline logic is not implemented yet
 		}
 		// Calculate Live kline for debugging for now
-		if _, exists := fe.klineDataMap[klineDatapoint.Topic]; !exists {
-			fe.klineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+		if _, exists := fe.KlineDataMap[klineDatapoint.Topic]; !exists {
+			fe.KlineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
 		}
 
-		klineData := append(fe.klineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+		klineData := append(fe.KlineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
 
 		mapMutex.Lock()
 		if len(klineData) > RequiredKlineThreshold {
 			// Keep only latest RequiredKlineThreshold number of records
 			klineData = klineData[len(klineData)-RequiredKlineThreshold:]
-			fe.klineDataMap[klineDatapoint.Topic] = klineData
+			fe.KlineDataMap[klineDatapoint.Topic] = klineData
 			fe.rsiReady <- klineDatapoint.Topic
 		}
 
-		fe.klineDataMap[klineDatapoint.Topic] = klineData
+		fe.KlineDataMap[klineDatapoint.Topic] = klineData
 		mapMutex.Unlock()
 
 	}
@@ -69,7 +69,7 @@ func (fe *Engine) ProcessRSI() {
 
 func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
 	mapMutex.Lock()
-	klineData, exists := fe.klineDataMap[topic]
+	klineData, exists := fe.KlineDataMap[topic]
 	mapMutex.Unlock()
 
 	if canCalculateRSI(exists, klineData) {
@@ -102,7 +102,7 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 //		mapMutex.Lock()
 //
 //		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range fc.klineDataMap {
+//		for topic, prices := range fc.KlineDataMap {
 //			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
 //		}
 //		mapMutex.Unlock()
