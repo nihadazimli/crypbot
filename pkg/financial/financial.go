@@ -1,6 +1,7 @@
 package financial
 
 import (
+	"errors"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
 	"sync"
@@ -61,20 +62,22 @@ func (fe *Engine) ProcessKline() {
 
 func (fe *Engine) ProcessRSI() {
 	for topic := range fe.rsiReady {
-		if rsi, ok := fe.calculatedAndStoreRSI(topic); ok {
-			fe.evaluateRSI(topic, rsi)
+		rsi, err := fe.calculatedAndStoreRSI(topic)
+		if err != nil {
+			log.Println("Error calculating RSI:", err)
+			continue
 		}
+		fe.evaluateRSI(topic, rsi)
 	}
 }
 
-func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
+func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 	mapMutex.Lock()
 	klineData, exists := fe.KlineDataMap[topic]
 	mapMutex.Unlock()
 
 	if canCalculateRSI(exists, klineData) {
-		log.Println("Insufficient data to calculate RSI for topic:", topic)
-		return 0, false
+		return 0, errors.New("insufficient data to calculate RSI for topic: " + topic)
 	}
 
 	rsi := calculateRSI(klineData, RequiredKlineThreshold-1) //To get only latest RSI
@@ -88,7 +91,7 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, bool) {
 	fe.RSIDataMap = newMap
 	mapMutex.Unlock()
 
-	return rsi, true
+	return rsi, nil
 }
 
 func (fe *Engine) evaluateRSI(topic string, rsi float64) {
