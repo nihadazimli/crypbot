@@ -21,3 +21,6 @@ configs/config.yaml
 # Go workspace file
 go.work
 go.work.sum
+
+
+.idea
