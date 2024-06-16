@@ -4,19 +4,43 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	BybitCreds APICredentialsConfig `yaml:"bybit"`
-	Topics     []string             `yaml:"topics"`
+	Broker          BrokerConfig          `yaml:"bybit"`
+	Symbols         []string              `yaml:"symbols"`
+	MarketConstants MarketConstantsConfig `yaml:"marketConstants"`
+	KlineTopics     []string              //Derived from symbols
 }
 
-type APICredentialsConfig struct {
-	APIKey    string `yaml:"APIKey"`
-	APISecret string `yaml:"APISecret"`
-	WSAddress string `yaml:"WSAddress"`
+type BrokerConfig struct {
+	API       APIConfig       `yaml:"api"`
+	WebSocket WebSocketConfig `yaml:"websocket"`
+}
+
+type APIConfig struct {
+	Host         string             `yaml:"host"`
+	HostTestnet  string             `yaml:"hostTestnet"`
+	Key          string             `yaml:"apiKey"`
+	Secret       string             `yaml:"apiSecret"`
+	Timeout      int                `yaml:"timeout"`
+	RequestPaths RequestPathsConfig `yaml:"requestPaths"`
+}
+
+type WebSocketConfig struct {
+	Address string `yaml:"address"`
+}
+
+type RequestPathsConfig struct {
+	Kline string `yaml:"kline"`
+}
+
+type MarketConstantsConfig struct {
+	KlineInterval int    `yaml:"klineInterval"`
+	KLineCategory string `yaml:"klineCategory"`
 }
 
 var cfg *Config
@@ -46,6 +70,12 @@ func loadFromYaml() (*Config, error) {
 	decoder := yaml.NewDecoder(f)
 	if err = decoder.Decode(&config); err != nil {
 		return nil, err
+	}
+
+	// Derive topics from symbols
+	config.KlineTopics = make([]string, len(config.Symbols))
+	for i, symbol := range config.Symbols {
+		config.KlineTopics[i] = "kline." + strconv.Itoa(config.MarketConstants.KlineInterval) + "." + symbol
 	}
 
 	return &config, nil

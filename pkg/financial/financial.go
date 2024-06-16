@@ -1,10 +1,19 @@
 package financial
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/model"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -13,9 +22,12 @@ var (
 
 const (
 	RequiredKlineThreshold = 15
+	DefaultKlineInterval   = 15
 )
 
 type Engine struct {
+	httpClient    *http.Client
+	cfg           *config.Config
 	KlineDataMap  map[string][]float64
 	RSIDataMap    map[string]float64
 	rsiReady      chan string
@@ -23,8 +35,11 @@ type Engine struct {
 	klineReceived chan model.InternalKline
 }
 
-func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Engine {
+// NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
+func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
+		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:           config.GetConfig(),
 		KlineDataMap:  make(map[string][]float64),
 		RSIDataMap:    make(map[string]float64),
 		klineReceived: klineReceived,
@@ -100,6 +115,51 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 	}
 }
 
+// FetchRecentKlines retrieves most recent n klines for a given trading symbol from API
+func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
+
+	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
+
+	params := map[string]string{
+		"symbol":   symbol,
+		"category": fe.cfg.MarketConstants.KLineCategory,
+		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
+		"start":    strconv.FormatInt(startTime, 10),
+		"end":      strconv.FormatInt(endTime, 10),
+		"limit":    strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
+	}
+
+	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
+	fmt.Println("building requestUrl:", requestUrl)
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		log.Fatal("Can't create request for kline: ", err)
+	}
+
+	response, err := fe.httpClient.Do(req)
+	if err != nil {
+		log.Fatal("Can't do request for kline: ", err)
+	}
+
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+
+	// Parse the JSON response
+	var apiResponse model.KlineApiResponse
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		log.Fatal("JSON Unmarshaling failed: ", err)
+	}
+
+	// Extract the 5th value (close price) from each list
+	var closePrices []float64
+	for _, item := range apiResponse.Result.List {
+		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
+		closePrices = append(closePrices, closePrice)
+	}
+	return closePrices
+
+}
+
 //func Show() {
 //	for {
 //		mapMutex.Lock()
@@ -112,6 +172,26 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 //		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
 //	}
 //}
+
+func DebugCalculateRSI(prices []float64) float64 {
+	return calculateRSI(prices, 14)
+}
+func buildUrl(host string, path string, params map[string]string) string {
+	baseUrl, err := url.Parse(host)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	baseUrl.Path, _ = url.JoinPath(baseUrl.Path, path)
+
+	queryParams := url.Values{}
+	for k, v := range params {
+		queryParams.Add(k, v)
+	}
+	baseUrl.RawQuery = queryParams.Encode()
+
+	return baseUrl.String()
+}
 
 func calculateRSI(prices []float64, n int) float64 {
 	if len(prices) < n+1 {
@@ -172,4 +252,14 @@ func ema(values []float64, n int) []float64 {
 
 func canCalculateRSI(exists bool, klineData []float64) bool {
 	return !exists || len(klineData) < RequiredKlineThreshold
+}
+
+// determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
+// it returns startTime and endTime in milliseconds since the epoch.
+func determineTimeInterval(n int, interval int) (int64, int64) {
+	now := time.Now()
+	pastDuration := time.Duration(n*interval) * time.Minute
+	pastTime := now.Add(-pastDuration)
+
+	return pastTime.UnixMilli(), now.UnixMilli()
 }

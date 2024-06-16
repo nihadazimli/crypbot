@@ -26,3 +26,13 @@ type InternalKline struct {
 	Close   float64
 	Confirm bool
 }
+
+type KlineApiResponse struct {
+	RetCode int    `json:"retCode"`
+	RetMsg  string `json:"retMsg"`
+	Result  struct {
+		Symbol   string     `json:"symbol"`
+		Category string     `json:"category"`
+		List     [][]string `json:"list"`
+	} `json:"result"`
+}

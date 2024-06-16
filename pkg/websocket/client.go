@@ -18,7 +18,7 @@ type WebSocketClient struct {
 
 func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
-	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.Address, nil)
 
 	if err != nil {
 		log.Fatal("Failed to dial:", err)
@@ -33,7 +33,7 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	fmt.Println("Connected.")
 
-	c.subscribe(cfg.Topics)
+	c.subscribe(cfg.KlineTopics)
 	c.readPump()
 
 }
