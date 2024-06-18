@@ -121,7 +121,7 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 }
 
 // FetchRecentKlines retrieves most recent n closed klines for a given trading symbol from API
-func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
+func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 
 	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
 
@@ -137,21 +137,25 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
 	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		log.Fatal("Can't create request for kline: ", err)
+		return nil, err
 	}
 
 	response, err := fe.httpClient.Do(req)
 	if err != nil {
-		log.Fatal("Can't do request for kline: ", err)
+		return nil, err
 	}
 
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 
+	if err != nil {
+		return nil, err
+	}
+
 	// Parse the JSON response
 	var apiResponse model.KlineApiResponse
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		log.Fatal("JSON Unmarshaling failed: ", err)
+		return nil, err
 	}
 
 	// Extract the 5th value (close price) from each list
@@ -162,13 +166,18 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
 	}
 
 	// Eliminate live value, just return most recent closed values
-	return closePrices[1:]
+	return closePrices[1:], nil
 
 }
 
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
-		fe.KlineDataMap[symbol] = fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.KlineInterval)
+		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.KlineInterval)
+		if err != nil {
+			log.Println("Error fetching recent kline data for", symbol, ":", err)
+		}
+		fe.KlineDataMap[symbol] = closePrices
+
 	}
 }
 
