@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,7 +19,6 @@ type WebSocketClient struct {
 }
 
 func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
-
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.Address, nil)
 
 	if err != nil {
@@ -33,7 +34,9 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	fmt.Println("Connected.")
 
-	c.subscribe(cfg.KlineTopics)
+	klineTopics := generateKlineTopicsFromSymbols(cfg.Symbols, strconv.Itoa(cfg.MarketConstants.KlineInterval))
+
+	c.subscribe(klineTopics)
 	c.readPump()
 
 }
@@ -87,10 +90,23 @@ func (c *WebSocketClient) handle(message []byte) {
 	}
 	for _, kline := range WSKline.Data {
 		internalKline := model.InternalKline{
-			Topic:   WSKline.Topic,
+			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
 			Close:   kline.Close,
 			Confirm: kline.Confirm,
 		}
 		c.klineWriteChan <- internalKline
 	}
+}
+func generateKlineTopicsFromSymbols(symbols []string, klineInterval string) []string {
+	var topics []string
+
+	for _, symbol := range symbols {
+		topic := "kline." + klineInterval + "." + symbol
+		topics = append(topics, topic)
+	}
+	return topics
+}
+
+func getSymbolFromKlineTopic(topic string) string {
+	return topic[strings.LastIndex(topic, ".")+1:]
 }

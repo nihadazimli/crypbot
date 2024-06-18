@@ -22,7 +22,7 @@ type KlineData struct {
 }
 
 type InternalKline struct {
-	Topic   string
+	Symbol  string
 	Close   float64
 	Confirm bool
 }

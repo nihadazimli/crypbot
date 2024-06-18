@@ -1,10 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/pkg/trader"
+	"github.com/nihadazimli/crypbot/pkg/websocket"
 )
 
 func main() {
@@ -14,22 +15,16 @@ func main() {
 	rsiReady := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 
-	//go websocket.Serve(cfg, klineReceived)
+	go websocket.Serve(cfg, klineReceived)
 
-	fe := financial.NewFinancialEngine(klineReceived, rsiReady, buyReady, cfg.Broker.API.Timeout)
+	fe := financial.Start(klineReceived, rsiReady, buyReady, cfg.Broker.API.Timeout)
 
-	response := fe.FetchRecentKlines("BTCUSDT", 15)
+	go fe.ProcessKline()
+	go fe.ProcessRSI()
 
-	RSI := financial.DebugCalculateRSI(response)
+	tc := trader.NewTraderClient(buyReady)
 
-	//
-	//go fe.ProcessKline()
-	//go fe.ProcessRSI()
-	//
-	//tc := trader.NewTraderClient(buyReady)
-	//
-	//go tc.ProcessBuySignal(fe)
+	go tc.ProcessBuySignal(fe)
 
-	fmt.Println("response:", response, "len:", len(response), "RSI:", RSI)
-
+	select {}
 }

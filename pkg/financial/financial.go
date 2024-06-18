@@ -3,7 +3,6 @@ package financial
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"io"
@@ -22,7 +21,6 @@ var (
 
 const (
 	RequiredKlineThreshold = 15
-	DefaultKlineInterval   = 15
 )
 
 type Engine struct {
@@ -48,6 +46,13 @@ func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan st
 	}
 }
 
+func Start(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, timeout int) *Engine {
+	fe := NewFinancialEngine(klineReceived, rsiReady, buyReady, timeout)
+	fe.loadRecentKlineData()
+
+	return fe
+}
+
 func (fe *Engine) ProcessKline() {
 
 	for klineDatapoint := range fe.klineReceived {
@@ -55,21 +60,21 @@ func (fe *Engine) ProcessKline() {
 			continue // Closed Kline logic is not implemented yet
 		}
 		// Calculate Live kline for debugging for now
-		if _, exists := fe.KlineDataMap[klineDatapoint.Topic]; !exists {
-			fe.KlineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+		if _, exists := fe.KlineDataMap[klineDatapoint.Symbol]; !exists {
+			fe.KlineDataMap[klineDatapoint.Symbol] = make([]float64, 0, RequiredKlineThreshold+1)
 		}
 
-		klineData := append(fe.KlineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+		klineData := append(fe.KlineDataMap[klineDatapoint.Symbol], klineDatapoint.Close)
 
 		mapMutex.Lock()
 		if len(klineData) > RequiredKlineThreshold {
 			// Keep only latest RequiredKlineThreshold number of records
 			klineData = klineData[len(klineData)-RequiredKlineThreshold:]
-			fe.KlineDataMap[klineDatapoint.Topic] = klineData
-			fe.rsiReady <- klineDatapoint.Topic
+			fe.KlineDataMap[klineDatapoint.Symbol] = klineData
+			fe.rsiReady <- klineDatapoint.Symbol
 		}
 
-		fe.KlineDataMap[klineDatapoint.Topic] = klineData
+		fe.KlineDataMap[klineDatapoint.Symbol] = klineData
 		mapMutex.Unlock()
 
 	}
@@ -115,7 +120,7 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 	}
 }
 
-// FetchRecentKlines retrieves most recent n klines for a given trading symbol from API
+// FetchRecentKlines retrieves most recent n closed klines for a given trading symbol from API
 func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
 
 	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
@@ -126,11 +131,10 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
 		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
 		"start":    strconv.FormatInt(startTime, 10),
 		"end":      strconv.FormatInt(endTime, 10),
-		"limit":    strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
+		"limit":    strconv.Itoa(fe.cfg.MarketConstants.KlineInterval + 1),
 	}
 
 	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
-	fmt.Println("building requestUrl:", requestUrl)
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
 		log.Fatal("Can't create request for kline: ", err)
@@ -156,26 +160,35 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) []float64 {
 		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
 		closePrices = append(closePrices, closePrice)
 	}
-	return closePrices
+
+	// Eliminate live value, just return most recent closed values
+	return closePrices[1:]
 
 }
 
-//func Show() {
+func (fe *Engine) loadRecentKlineData() {
+	for _, symbol := range fe.cfg.Symbols {
+		fe.KlineDataMap[symbol] = fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.KlineInterval)
+	}
+}
+
+//func (fe *Engine) Show() {
 //	for {
 //		mapMutex.Lock()
 //
 //		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range fc.KlineDataMap {
+//		for topic, prices := range fe.RSIDataMap {
 //			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
 //		}
 //		mapMutex.Unlock()
 //		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
 //	}
 //}
+//
+//func DebugCalculateRSI(prices []float64, n int) float64 {
+//	return calculateRSI(prices, n)
+//}
 
-func DebugCalculateRSI(prices []float64) float64 {
-	return calculateRSI(prices, 14)
-}
 func buildUrl(host string, path string, params map[string]string) string {
 	baseUrl, err := url.Parse(host)
 

@@ -18,7 +18,7 @@ type Config struct {
 
 type BrokerConfig struct {
 	API       APIConfig       `yaml:"api"`
-	WebSocket WebSocketConfig `yaml:"websocket"`
+	WebSocket WebSocketConfig `yaml:"webSocket"`
 }
 
 type APIConfig struct {
