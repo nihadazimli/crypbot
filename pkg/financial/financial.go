@@ -19,10 +19,6 @@ var (
 	mapMutex sync.Mutex
 )
 
-const (
-	RequiredKlineThreshold = 15
-)
-
 type Engine struct {
 	httpClient    *http.Client
 	cfg           *config.Config
@@ -61,15 +57,15 @@ func (fe *Engine) ProcessKline() {
 		}
 		// Calculate Live kline for debugging for now
 		if _, exists := fe.KlineDataMap[klineDatapoint.Symbol]; !exists {
-			fe.KlineDataMap[klineDatapoint.Symbol] = make([]float64, 0, RequiredKlineThreshold+1)
+			fe.KlineDataMap[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
 		}
 
 		klineData := append(fe.KlineDataMap[klineDatapoint.Symbol], klineDatapoint.Close)
 
 		mapMutex.Lock()
-		if len(klineData) > RequiredKlineThreshold {
-			// Keep only latest RequiredKlineThreshold number of records
-			klineData = klineData[len(klineData)-RequiredKlineThreshold:]
+		if len(klineData) > fe.cfg.MarketConstants.RSIWindowSize {
+			// Keep only latest cfg.MarketConstants.RSIWindowSize number of records
+			klineData = klineData[len(klineData)-fe.cfg.MarketConstants.RSIWindowSize:]
 			fe.KlineDataMap[klineDatapoint.Symbol] = klineData
 			fe.rsiReady <- klineDatapoint.Symbol
 		}
@@ -96,11 +92,11 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 	klineData, exists := fe.KlineDataMap[topic]
 	mapMutex.Unlock()
 
-	if canCalculateRSI(exists, klineData) {
+	if canCalculateRSI(exists, klineData, fe.cfg.MarketConstants.RSIWindowSize) {
 		return 0, errors.New("insufficient data to calculate RSI for topic: " + topic)
 	}
 
-	rsi := calculateRSI(klineData, RequiredKlineThreshold-1) //To get only latest RSI
+	rsi := calculateRSI(klineData, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
 
 	mapMutex.Lock()
 	newMap := make(map[string]float64)
@@ -272,8 +268,8 @@ func ema(values []float64, n int) []float64 {
 	return emaValues
 }
 
-func canCalculateRSI(exists bool, klineData []float64) bool {
-	return !exists || len(klineData) < RequiredKlineThreshold
+func canCalculateRSI(exists bool, klineData []float64, requiredKlineThreshold int) bool {
+	return !exists || len(klineData) < requiredKlineThreshold
 }
 
 // determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
