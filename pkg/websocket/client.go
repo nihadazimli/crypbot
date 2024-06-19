@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,10 +33,8 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	fmt.Println("Connected.")
 
-	klineTopics := generateKlineTopicsFromSymbols(cfg.Symbols, strconv.Itoa(cfg.MarketConstants.KlineInterval))
-
 	go c.keepAlive()
-	c.subscribe(klineTopics)
+	c.subscribe(cfg.KlineTopics)
 	c.readPump()
 
 }
@@ -97,15 +94,6 @@ func (c *WebSocketClient) handle(message []byte) {
 		}
 		c.klineWriteChan <- internalKline
 	}
-}
-func generateKlineTopicsFromSymbols(symbols []string, klineInterval string) []string {
-	var topics []string
-
-	for _, symbol := range symbols {
-		topic := "kline." + klineInterval + "." + symbol
-		topics = append(topics, topic)
-	}
-	return topics
 }
 
 func getSymbolFromKlineTopic(topic string) string {

@@ -41,6 +41,7 @@ type RequestPathsConfig struct {
 type MarketConstantsConfig struct {
 	KlineInterval int    `yaml:"klineInterval"`
 	KLineCategory string `yaml:"klineCategory"`
+	RSIWindowSize int    `yaml:"RSIWindowSize"`
 }
 
 var cfg *Config

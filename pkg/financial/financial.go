@@ -131,7 +131,7 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
 		"start":    strconv.FormatInt(startTime, 10),
 		"end":      strconv.FormatInt(endTime, 10),
-		"limit":    strconv.Itoa(fe.cfg.MarketConstants.KlineInterval + 1),
+		"limit":    strconv.Itoa(n + 1),
 	}
 
 	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
@@ -164,15 +164,15 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
 		closePrices = append(closePrices, closePrice)
 	}
-
+	reverse(closePrices)
 	// Eliminate live value, just return most recent closed values
-	return closePrices[1:], nil
+	return closePrices[:len(closePrices)-1], nil
 
 }
 
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
-		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.KlineInterval)
+		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.RSIWindowSize)
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
 		}
@@ -284,4 +284,11 @@ func determineTimeInterval(n int, interval int) (int64, int64) {
 	pastTime := now.Add(-pastDuration)
 
 	return pastTime.UnixMilli(), now.UnixMilli()
+}
+
+// reverse given float64 numbers slice this function reverses every value in place
+func reverse(numbers []float64) {
+	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
+		numbers[i], numbers[j] = numbers[j], numbers[i]
+	}
 }
