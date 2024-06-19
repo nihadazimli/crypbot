@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"log"
-	"strings"
 )
 
 type Client struct {
@@ -20,14 +19,13 @@ func NewTraderClient(buyReady chan string) *Client {
 }
 
 func (tc *Client) ProcessBuySignal(fc *financial.Engine) {
-	for topic := range tc.buyReady {
-		if fc.RSIDataMap[topic] > 20.0 {
+	for symbol := range tc.buyReady {
+		if fc.RSIDataMap[symbol] > 20.0 {
 			log.Fatal("RSIDataMap too big")
 		}
-		coinSymbol := KlineSymbolToCoinSymbol(topic)
 
-		go tc.buy(coinSymbol)
-		go tc.ProcessSell(fc, coinSymbol, 1)
+		go tc.buy(symbol)
+		go tc.ProcessSell(fc, symbol, 1)
 
 	}
 }
@@ -56,8 +54,4 @@ func (tc *Client) ProcessSell(fc *financial.Engine, coinSymbol string, stop_loss
 
 func (tc *Client) sell(coinKlineSymbol string) {
 
-}
-
-func KlineSymbolToCoinSymbol(coinKlineSymbol string) string {
-	return coinKlineSymbol[strings.LastIndex(coinKlineSymbol, ".")+1:]
 }

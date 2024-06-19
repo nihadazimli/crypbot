@@ -1,21 +1,27 @@
 package financial
 
 import (
+	"encoding/json"
 	"errors"
+	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/model"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 var (
 	mapMutex sync.Mutex
 )
 
-const (
-	RequiredKlineThreshold = 15
-)
-
 type Engine struct {
+	httpClient    *http.Client
+	cfg           *config.Config
 	KlineDataMap  map[string][]float64
 	RSIDataMap    map[string]float64
 	rsiReady      chan string
@@ -23,14 +29,24 @@ type Engine struct {
 	klineReceived chan model.InternalKline
 }
 
-func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string) *Engine {
+// NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
+func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
+		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:           config.GetConfig(),
 		KlineDataMap:  make(map[string][]float64),
 		RSIDataMap:    make(map[string]float64),
 		klineReceived: klineReceived,
 		rsiReady:      rsiReady,
 		buyReady:      buyReady,
 	}
+}
+
+func Start(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, timeout int) *Engine {
+	fe := NewFinancialEngine(klineReceived, rsiReady, buyReady, timeout)
+	fe.loadRecentKlineData()
+
+	return fe
 }
 
 func (fe *Engine) ProcessKline() {
@@ -40,21 +56,21 @@ func (fe *Engine) ProcessKline() {
 			continue // Closed Kline logic is not implemented yet
 		}
 		// Calculate Live kline for debugging for now
-		if _, exists := fe.KlineDataMap[klineDatapoint.Topic]; !exists {
-			fe.KlineDataMap[klineDatapoint.Topic] = make([]float64, 0, 16)
+		if _, exists := fe.KlineDataMap[klineDatapoint.Symbol]; !exists {
+			fe.KlineDataMap[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
 		}
 
-		klineData := append(fe.KlineDataMap[klineDatapoint.Topic], klineDatapoint.Close)
+		klineData := append(fe.KlineDataMap[klineDatapoint.Symbol], klineDatapoint.Close)
 
 		mapMutex.Lock()
-		if len(klineData) > RequiredKlineThreshold {
-			// Keep only latest RequiredKlineThreshold number of records
-			klineData = klineData[len(klineData)-RequiredKlineThreshold:]
-			fe.KlineDataMap[klineDatapoint.Topic] = klineData
-			fe.rsiReady <- klineDatapoint.Topic
+		if len(klineData) > fe.cfg.MarketConstants.RSIWindowSize {
+			// Keep only latest cfg.MarketConstants.RSIWindowSize number of records
+			klineData = klineData[len(klineData)-fe.cfg.MarketConstants.RSIWindowSize:]
+			fe.KlineDataMap[klineDatapoint.Symbol] = klineData
+			fe.rsiReady <- klineDatapoint.Symbol
 		}
 
-		fe.KlineDataMap[klineDatapoint.Topic] = klineData
+		fe.KlineDataMap[klineDatapoint.Symbol] = klineData
 		mapMutex.Unlock()
 
 	}
@@ -76,11 +92,11 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 	klineData, exists := fe.KlineDataMap[topic]
 	mapMutex.Unlock()
 
-	if canCalculateRSI(exists, klineData) {
+	if canCalculateRSI(exists, klineData, fe.cfg.MarketConstants.RSIWindowSize) {
 		return 0, errors.New("insufficient data to calculate RSI for topic: " + topic)
 	}
 
-	rsi := calculateRSI(klineData, RequiredKlineThreshold-1) //To get only latest RSI
+	rsi := calculateRSI(klineData, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
 
 	mapMutex.Lock()
 	newMap := make(map[string]float64)
@@ -100,18 +116,100 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 	}
 }
 
-//func Show() {
+// FetchRecentKlines retrieves most recent n closed klines for a given trading symbol from API
+func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
+
+	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
+
+	params := map[string]string{
+		"symbol":   symbol,
+		"category": fe.cfg.MarketConstants.KLineCategory,
+		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
+		"start":    strconv.FormatInt(startTime, 10),
+		"end":      strconv.FormatInt(endTime, 10),
+		"limit":    strconv.Itoa(n + 1),
+	}
+
+	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := fe.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the JSON response
+	var apiResponse model.KlineApiResponse
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return nil, err
+	}
+
+	// Extract the 5th value (close price) from each list
+	var closePrices []float64
+	for _, item := range apiResponse.Result.List {
+		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
+		closePrices = append(closePrices, closePrice)
+	}
+	reverse(closePrices)
+	// Eliminate live value, just return most recent closed values
+	return closePrices[:len(closePrices)-1], nil
+
+}
+
+func (fe *Engine) loadRecentKlineData() {
+	for _, symbol := range fe.cfg.Symbols {
+		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.RSIWindowSize)
+		if err != nil {
+			log.Println("Error fetching recent kline data for", symbol, ":", err)
+		}
+		fe.KlineDataMap[symbol] = closePrices
+
+	}
+}
+
+//func (fe *Engine) Show() {
 //	for {
 //		mapMutex.Lock()
 //
 //		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range fc.KlineDataMap {
+//		for topic, prices := range fe.RSIDataMap {
 //			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
 //		}
 //		mapMutex.Unlock()
 //		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
 //	}
 //}
+//
+//func DebugCalculateRSI(prices []float64, n int) float64 {
+//	return calculateRSI(prices, n)
+//}
+
+func buildUrl(host string, path string, params map[string]string) string {
+	baseUrl, err := url.Parse(host)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	baseUrl.Path, _ = url.JoinPath(baseUrl.Path, path)
+
+	queryParams := url.Values{}
+	for k, v := range params {
+		queryParams.Add(k, v)
+	}
+	baseUrl.RawQuery = queryParams.Encode()
+
+	return baseUrl.String()
+}
 
 func calculateRSI(prices []float64, n int) float64 {
 	if len(prices) < n+1 {
@@ -170,6 +268,23 @@ func ema(values []float64, n int) []float64 {
 	return emaValues
 }
 
-func canCalculateRSI(exists bool, klineData []float64) bool {
-	return !exists || len(klineData) < RequiredKlineThreshold
+func canCalculateRSI(exists bool, klineData []float64, requiredKlineThreshold int) bool {
+	return !exists || len(klineData) < requiredKlineThreshold
+}
+
+// determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
+// it returns startTime and endTime in milliseconds since the epoch.
+func determineTimeInterval(n int, interval int) (int64, int64) {
+	now := time.Now()
+	pastDuration := time.Duration(n*interval) * time.Minute
+	pastTime := now.Add(-pastDuration)
+
+	return pastTime.UnixMilli(), now.UnixMilli()
+}
+
+// reverse given float64 numbers slice this function reverses every value in place
+func reverse(numbers []float64) {
+	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
+		numbers[i], numbers[j] = numbers[j], numbers[i]
+	}
 }

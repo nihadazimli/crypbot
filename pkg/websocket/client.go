@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,8 +18,7 @@ type WebSocketClient struct {
 }
 
 func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
-
-	conn, _, err := websocket.DefaultDialer.Dial(cfg.BybitCreds.WSAddress, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.Address, nil)
 
 	if err != nil {
 		log.Fatal("Failed to dial:", err)
@@ -33,7 +33,8 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	fmt.Println("Connected.")
 
-	c.subscribe(cfg.Topics)
+	go c.keepAlive()
+	c.subscribe(cfg.KlineTopics)
 	c.readPump()
 
 }
@@ -74,7 +75,7 @@ func (c *WebSocketClient) keepAlive() {
 			log.Println("Ping failed:", err)
 			return
 		}
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 20)
 	}
 }
 
@@ -87,10 +88,14 @@ func (c *WebSocketClient) handle(message []byte) {
 	}
 	for _, kline := range WSKline.Data {
 		internalKline := model.InternalKline{
-			Topic:   WSKline.Topic,
+			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
 			Close:   kline.Close,
 			Confirm: kline.Confirm,
 		}
 		c.klineWriteChan <- internalKline
 	}
+}
+
+func getSymbolFromKlineTopic(topic string) string {
+	return topic[strings.LastIndex(topic, ".")+1:]
 }
