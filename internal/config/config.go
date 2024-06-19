@@ -75,7 +75,7 @@ func loadFromYaml() (*Config, error) {
 	// Derive topics from symbols
 	config.KlineTopics = make([]string, len(config.Symbols))
 	for i, symbol := range config.Symbols {
-		config.KlineTopics[i] = createKlineTopics(cfg.MarketConstants.KlineInterval, symbol)
+		config.KlineTopics[i] = createKlineTopics(config.MarketConstants.KlineInterval, symbol)
 	}
 
 	return &config, nil

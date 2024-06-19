@@ -36,6 +36,7 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	klineTopics := generateKlineTopicsFromSymbols(cfg.Symbols, strconv.Itoa(cfg.MarketConstants.KlineInterval))
 
+	go c.keepAlive()
 	c.subscribe(klineTopics)
 	c.readPump()
 
@@ -77,7 +78,7 @@ func (c *WebSocketClient) keepAlive() {
 			log.Println("Ping failed:", err)
 			return
 		}
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 20)
 	}
 }
 
