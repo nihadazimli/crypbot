@@ -20,8 +20,8 @@ func NewTraderClient(buyReady chan string) *Client {
 
 func (tc *Client) ProcessBuySignal(fc *financial.Engine) {
 	for symbol := range tc.buyReady {
-		if fc.RSIDataMap[symbol] > 20.0 {
-			log.Fatal("RSIDataMap too big")
+		if fc.RSIDataClosed[symbol] > 20.0 {
+			log.Fatal("RSIDataClosed too big")
 		}
 
 		go tc.buy(symbol)
@@ -42,7 +42,7 @@ func (tc *Client) ProcessSell(fc *financial.Engine, coinSymbol string, stop_loss
 	//
 	//}
 	//
-	//for fc.RSIDataMap[coinSymbol] < 40 || fc.TickerDataMap[coinSymbol] != stop_loss {
+	//for fc.RSIDataClosed[coinSymbol] < 40 || fc.TickerDataMap[coinSymbol] != stop_loss {
 	//
 	//}
 	//
