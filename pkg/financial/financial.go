@@ -120,7 +120,7 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 }
 
 func (fe *Engine) evaluateRSI(topic string, rsi float64) {
-	if rsi <= 20.0 {
+	if rsi <= fe.cfg.Trader.RSIBuyValue {
 		fe.buyReady <- topic
 	}
 }

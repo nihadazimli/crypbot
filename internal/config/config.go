@@ -13,6 +13,7 @@ type Config struct {
 	Broker          BrokerConfig          `yaml:"bybit"`
 	Symbols         []string              `yaml:"symbols"`
 	MarketConstants MarketConstantsConfig `yaml:"marketConstants"`
+	Trader          TraderConfig          `yaml:"trader"`
 	KlineTopics     []string              //Derived from symbols
 }
 
@@ -42,6 +43,11 @@ type MarketConstantsConfig struct {
 	KlineInterval int    `yaml:"klineInterval"`
 	KLineCategory string `yaml:"klineCategory"`
 	RSIWindowSize int    `yaml:"RSIWindowSize"`
+}
+
+type TraderConfig struct {
+	RSIBuyValue  float64 `yaml:"RSIBuyValue"`
+	RSISellValue float64 `yaml:"RSISellValue"`
 }
 
 var cfg *Config
