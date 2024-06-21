@@ -15,7 +15,7 @@ type Config struct {
 	Symbols         []string              `yaml:"symbols"`
 	MarketConstants MarketConstantsConfig `yaml:"market_constants"`
 	Trader          TraderConfig          `yaml:"trader"`
-	KlineTopics     []string              // Derived from symbols, not directly from YAML
+	KlineTopics     []string              `yaml:"-"`
 }
 
 type BrokerConfig struct {
@@ -83,8 +83,7 @@ func loadFromYaml() (*Config, error) {
 	// Derive topics from symbols
 	config.initializeKlineTopics()
 
-	err = config.validate()
-	if err != nil {
+	if err = config.validate(); err != nil {
 		return nil, err
 	}
 	return &config, nil
