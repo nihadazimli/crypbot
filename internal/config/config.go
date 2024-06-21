@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,22 +13,23 @@ import (
 type Config struct {
 	Broker          BrokerConfig          `yaml:"bybit"`
 	Symbols         []string              `yaml:"symbols"`
-	MarketConstants MarketConstantsConfig `yaml:"marketConstants"`
-	KlineTopics     []string              //Derived from symbols
+	MarketConstants MarketConstantsConfig `yaml:"market_constants"`
+	Trader          TraderConfig          `yaml:"trader"`
+	KlineTopics     []string              `yaml:"-"`
 }
 
 type BrokerConfig struct {
 	API       APIConfig       `yaml:"api"`
-	WebSocket WebSocketConfig `yaml:"webSocket"`
+	WebSocket WebSocketConfig `yaml:"web_socket"`
 }
 
 type APIConfig struct {
 	Host         string             `yaml:"host"`
-	HostTestnet  string             `yaml:"hostTestnet"`
-	Key          string             `yaml:"apiKey"`
-	Secret       string             `yaml:"apiSecret"`
+	HostTestnet  string             `yaml:"host_testnet"`
+	Key          string             `yaml:"api_key"`
+	Secret       string             `yaml:"api_secret"`
 	Timeout      int                `yaml:"timeout"`
-	RequestPaths RequestPathsConfig `yaml:"requestPaths"`
+	RequestPaths RequestPathsConfig `yaml:"request_paths"`
 }
 
 type WebSocketConfig struct {
@@ -39,9 +41,14 @@ type RequestPathsConfig struct {
 }
 
 type MarketConstantsConfig struct {
-	KlineInterval int    `yaml:"klineInterval"`
-	KLineCategory string `yaml:"klineCategory"`
-	RSIWindowSize int    `yaml:"RSIWindowSize"`
+	KlineInterval int    `yaml:"kline_interval"`
+	KlineCategory string `yaml:"kline_category"`
+	RSIWindowSize int    `yaml:"rsi_window_size"`
+}
+
+type TraderConfig struct {
+	RSIBuyValue  float64 `yaml:"rsi_buy_value"`
+	RSISellValue float64 `yaml:"rsi_sell_value"`
 }
 
 var cfg *Config
@@ -69,19 +76,33 @@ func loadFromYaml() (*Config, error) {
 
 	var config Config
 	decoder := yaml.NewDecoder(f)
-	if err = decoder.Decode(&config); err != nil {
+	if err := decoder.Decode(&config); err != nil {
 		return nil, err
 	}
 
 	// Derive topics from symbols
-	config.KlineTopics = make([]string, len(config.Symbols))
-	for i, symbol := range config.Symbols {
-		config.KlineTopics[i] = createKlineTopics(config.MarketConstants.KlineInterval, symbol)
-	}
+	config.initializeKlineTopics()
 
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
 	return &config, nil
 }
 
 func createKlineTopics(klineInterval int, symbol string) string {
 	return "kline." + strconv.Itoa(klineInterval) + "." + symbol
+}
+
+func (c *Config) initializeKlineTopics() {
+	c.KlineTopics = make([]string, len(c.Symbols))
+	for i, symbol := range c.Symbols {
+		c.KlineTopics[i] = createKlineTopics(c.MarketConstants.KlineInterval, symbol)
+	}
+}
+
+func (c *Config) validate() error {
+	if len(c.Symbols) == 0 {
+		return errors.New("no symbols configured")
+	}
+	return nil
 }

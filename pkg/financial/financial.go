@@ -20,25 +20,27 @@ var (
 )
 
 type Engine struct {
-	httpClient    *http.Client
-	cfg           *config.Config
-	KlineDataMap  map[string][]float64
-	RSIDataMap    map[string]float64
-	rsiReady      chan string
-	buyReady      chan string
-	klineReceived chan model.InternalKline
+	httpClient      *http.Client
+	cfg             *config.Config
+	KlineDataClosed map[string][]float64
+	RSIDataClosed   map[string]float64
+	RSIDataLive     map[string]float64
+	rsiReady        chan string
+	buyReady        chan string
+	klineReceived   chan model.InternalKline
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
 func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
-		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:           config.GetConfig(),
-		KlineDataMap:  make(map[string][]float64),
-		RSIDataMap:    make(map[string]float64),
-		klineReceived: klineReceived,
-		rsiReady:      rsiReady,
-		buyReady:      buyReady,
+		httpClient:      &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:             config.GetConfig(),
+		KlineDataClosed: make(map[string][]float64),
+		RSIDataClosed:   make(map[string]float64),
+		RSIDataLive:     make(map[string]float64),
+		klineReceived:   klineReceived,
+		rsiReady:        rsiReady,
+		buyReady:        buyReady,
 	}
 }
 
@@ -53,26 +55,34 @@ func (fe *Engine) ProcessKline() {
 
 	for klineDatapoint := range fe.klineReceived {
 		if klineDatapoint.Confirm {
-			continue // Closed Kline logic is not implemented yet
+			// Processing closed Kline data
+			if _, exists := fe.KlineDataClosed[klineDatapoint.Symbol]; !exists {
+				// Hold enough Kline data per symbol for RSI
+				fe.KlineDataClosed[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
+			}
+
+			klineData := append(fe.KlineDataClosed[klineDatapoint.Symbol], klineDatapoint.Close)
+
+			mapMutex.Lock()
+			if len(klineData) > fe.cfg.MarketConstants.RSIWindowSize {
+				// Keep only latest RequiredKlineThreshold number of records
+				klineData = klineData[len(klineData)-fe.cfg.MarketConstants.RSIWindowSize:]
+				fe.KlineDataClosed[klineDatapoint.Symbol] = klineData
+				fe.rsiReady <- klineDatapoint.Symbol
+			}
+
+			fe.KlineDataClosed[klineDatapoint.Symbol] = klineData
+			mapMutex.Unlock()
+		} else {
+			// Processing live Kline data
+			if closedData, ok := fe.KlineDataClosed[klineDatapoint.Symbol]; ok && len(closedData) == fe.cfg.MarketConstants.RSIWindowSize {
+				// Calculate live RSI using the last closed data points plus a live data point
+				liveData := closedData[1:]
+				liveData = append(liveData, klineDatapoint.Close) // Append live data point
+				fe.RSIDataLive[klineDatapoint.Symbol] = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+			}
+
 		}
-		// Calculate Live kline for debugging for now
-		if _, exists := fe.KlineDataMap[klineDatapoint.Symbol]; !exists {
-			fe.KlineDataMap[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
-		}
-
-		klineData := append(fe.KlineDataMap[klineDatapoint.Symbol], klineDatapoint.Close)
-
-		mapMutex.Lock()
-		if len(klineData) > fe.cfg.MarketConstants.RSIWindowSize {
-			// Keep only latest cfg.MarketConstants.RSIWindowSize number of records
-			klineData = klineData[len(klineData)-fe.cfg.MarketConstants.RSIWindowSize:]
-			fe.KlineDataMap[klineDatapoint.Symbol] = klineData
-			fe.rsiReady <- klineDatapoint.Symbol
-		}
-
-		fe.KlineDataMap[klineDatapoint.Symbol] = klineData
-		mapMutex.Unlock()
-
 	}
 }
 
@@ -89,7 +99,7 @@ func (fe *Engine) ProcessRSI() {
 
 func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 	mapMutex.Lock()
-	klineData, exists := fe.KlineDataMap[topic]
+	klineData, exists := fe.KlineDataClosed[topic]
 	mapMutex.Unlock()
 
 	if canCalculateRSI(exists, klineData, fe.cfg.MarketConstants.RSIWindowSize) {
@@ -100,18 +110,18 @@ func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
 
 	mapMutex.Lock()
 	newMap := make(map[string]float64)
-	for k, v := range fe.RSIDataMap {
+	for k, v := range fe.RSIDataClosed {
 		newMap[k] = v
 	}
 	newMap[topic] = rsi
-	fe.RSIDataMap = newMap
+	fe.RSIDataClosed = newMap
 	mapMutex.Unlock()
 
 	return rsi, nil
 }
 
 func (fe *Engine) evaluateRSI(topic string, rsi float64) {
-	if rsi <= 20.0 {
+	if rsi <= fe.cfg.Trader.RSIBuyValue {
 		fe.buyReady <- topic
 	}
 }
@@ -123,7 +133,7 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 
 	params := map[string]string{
 		"symbol":   symbol,
-		"category": fe.cfg.MarketConstants.KLineCategory,
+		"category": fe.cfg.MarketConstants.KlineCategory,
 		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
 		"start":    strconv.FormatInt(startTime, 10),
 		"end":      strconv.FormatInt(endTime, 10),
@@ -172,7 +182,7 @@ func (fe *Engine) loadRecentKlineData() {
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
 		}
-		fe.KlineDataMap[symbol] = closePrices
+		fe.KlineDataClosed[symbol] = closePrices
 
 	}
 }
@@ -182,7 +192,7 @@ func (fe *Engine) loadRecentKlineData() {
 //		mapMutex.Lock()
 //
 //		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range fe.RSIDataMap {
+//		for topic, prices := range fe.RSIDataClosed {
 //			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
 //		}
 //		mapMutex.Unlock()
