@@ -57,7 +57,8 @@ func (fe *Engine) ProcessKline() {
 		if klineDatapoint.Confirm {
 			// Processing closed Kline data
 			if _, exists := fe.KlineDataClosed[klineDatapoint.Symbol]; !exists {
-				fe.KlineDataClosed[klineDatapoint.Symbol] = make([]float64, 0, +1)
+				// Hold enough Kline data per symbol for RSI
+				fe.KlineDataClosed[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
 			}
 
 			klineData := append(fe.KlineDataClosed[klineDatapoint.Symbol], klineDatapoint.Close)
@@ -132,7 +133,7 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 
 	params := map[string]string{
 		"symbol":   symbol,
-		"category": fe.cfg.MarketConstants.KLineCategory,
+		"category": fe.cfg.MarketConstants.KlineCategory,
 		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
 		"start":    strconv.FormatInt(startTime, 10),
 		"end":      strconv.FormatInt(endTime, 10),
