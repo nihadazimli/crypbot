@@ -76,14 +76,14 @@ func loadFromYaml() (*Config, error) {
 
 	var config Config
 	decoder := yaml.NewDecoder(f)
-	if err = decoder.Decode(&config); err != nil {
+	if err := decoder.Decode(&config); err != nil {
 		return nil, err
 	}
 
 	// Derive topics from symbols
 	config.initializeKlineTopics()
 
-	if err = config.validate(); err != nil {
+	if err := config.validate(); err != nil {
 		return nil, err
 	}
 	return &config, nil
