@@ -12,12 +12,12 @@ func main() {
 	cfg := config.GetConfig()
 
 	klineReceived := make(chan model.WSInternalKline)
-	rsiReady := make(chan string, len(cfg.Symbols)+1)
+	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 
 	go websocket.Serve(cfg, klineReceived)
 
-	fe := financial.Start(klineReceived, rsiReady, buyReady, cfg.Broker.API.Timeout)
+	fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
 
 	go fe.ProcessKline()
 	go fe.ProcessRSI()

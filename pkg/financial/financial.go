@@ -21,28 +21,28 @@ var (
 )
 
 type Engine struct {
-	httpClient    *http.Client
-	cfg           *config.Config
-	rsiReady      chan string
-	buyReady      chan string
-	klineReceived chan model.WSInternalKline
-	Coins         map[string]*model.CoinMetrics
+	httpClient          *http.Client
+	cfg                 *config.Config
+	closedKlineReceived chan string
+	buyReady            chan string
+	klineReceived       chan model.WSInternalKline
+	Coins               map[string]*model.CoinMetrics
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
-func NewFinancialEngine(klineReceived chan model.WSInternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
+func NewFinancialEngine(klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
-		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:           config.GetConfig(),
-		Coins:         make(map[string]*model.CoinMetrics),
-		klineReceived: klineReceived,
-		rsiReady:      rsiReady,
-		buyReady:      buyReady,
+		httpClient:          &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:                 config.GetConfig(),
+		Coins:               make(map[string]*model.CoinMetrics),
+		klineReceived:       klineReceived,
+		closedKlineReceived: closedKlineReceived,
+		buyReady:            buyReady,
 	}
 }
 
-func Start(klineReceived chan model.WSInternalKline, rsiReady chan string, buyReady chan string, timeout int) *Engine {
-	fe := NewFinancialEngine(klineReceived, rsiReady, buyReady, timeout)
+func Start(klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, timeout int) *Engine {
+	fe := NewFinancialEngine(klineReceived, closedKlineReceived, buyReady, timeout)
 	fe.loadRecentKlineData()
 
 	return fe
@@ -73,7 +73,7 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 		coinMetrics.ClosePriceClosed = coinMetrics.ClosePriceClosed[len(coinMetrics.ClosePriceClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
 		coinMetrics.VolumeValueClosed = coinMetrics.VolumeValueClosed[len(coinMetrics.VolumeValueClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
 
-		fe.rsiReady <- klineDatapoint.Symbol
+		fe.closedKlineReceived <- klineDatapoint.Symbol
 	}
 }
 
@@ -104,7 +104,7 @@ func (fe *Engine) getOrCreateCoinMetrics(symbol string) *model.CoinMetrics {
 }
 
 func (fe *Engine) ProcessRSI() {
-	for symbol := range fe.rsiReady {
+	for symbol := range fe.closedKlineReceived {
 		rsi, err := fe.calculateAndStoreMarketMetrics(symbol)
 		if err != nil {
 			log.Println("Error calculating RSI:", err)
@@ -124,8 +124,10 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error)
 	}
 
 	rsi := calculateRSI(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
+	volumeValueMedian := FindMedian(coinMetrics.VolumeValueClosed) * float64(fe.cfg.MarketConstants.MetricsWindowSize)
 
 	fe.Coins[symbol].RSIClosed = rsi
+	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
 
 	return rsi, nil
 }
@@ -198,6 +200,7 @@ func (fe *Engine) initClosedCoinMetrics(symbol string, n int) (*model.CoinMetric
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
 		coinMetrics, err := fe.initClosedCoinMetrics(symbol, fe.cfg.MarketConstants.MetricsWindowSize)
+
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
 			continue
@@ -227,7 +230,7 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSILive, metrics.RSIClosed, FindMedian(metrics.VolumeValueClosed))
+			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSILive, metrics.RSIClosed, metrics.VolumeValueMedian)
 		}
 
 		mapMutex.Unlock()
