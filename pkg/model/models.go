@@ -42,6 +42,7 @@ type KlineApiResponse struct {
 type CoinMetrics struct {
 	ClosePriceClosed  []float64
 	VolumeValueClosed []float64
-	RSIDataClosed     float64
-	RSIDataLive       float64
+	RSIClosed         float64
+	RSILive           float64
+	VolumeValueMedian float64
 }

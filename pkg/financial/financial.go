@@ -82,7 +82,7 @@ func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
 	if ok && len(coinMetrics.ClosePriceClosed) == fe.cfg.MarketConstants.MetricsWindowSize {
 		// Construct a dataset that includes the last MetricsWindowSize-1 closed prices and the live price
 		liveData := append(coinMetrics.ClosePriceClosed[1:], klineDatapoint.Close)
-		coinMetrics.RSIDataLive = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+		coinMetrics.RSILive = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
 	}
 }
 
@@ -125,7 +125,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error)
 
 	rsi := calculateRSI(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
 
-	fe.Coins[symbol].RSIDataClosed = rsi
+	fe.Coins[symbol].RSIClosed = rsi
 
 	return rsi, nil
 }
@@ -136,9 +136,8 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 	}
 }
 
-// FetchRecentKlines retrieves most recent n closed klines for a given trading symbol from API
-func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
-
+// initClosedCoinMetrics retrieves most recent n closed klines for a given trading symbol and initializes CoinMetrics.
+func (fe *Engine) initClosedCoinMetrics(symbol string, n int) (*model.CoinMetrics, error) {
 	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
 
 	params := map[string]string{
@@ -153,49 +152,57 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating request for kline data: %w", err)
 	}
 
 	response, err := fe.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error fetching kline data: %w", err)
 	}
-
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
 
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
-	// Parse the JSON response
 	var apiResponse model.KlineApiResponse
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error unmarshaling JSON: %w", err)
+	}
+
+	if len(apiResponse.Result.List) < 1 {
+		return nil, fmt.Errorf("no kline data available for symbol: %s", symbol)
 	}
 
 	// Extract the 5th value (close price) from each list
-	var closePrices []float64
+	closePrices := make([]float64, 0, len(apiResponse.Result.List))
+	volumeValues := make([]float64, 0, len(apiResponse.Result.List))
 	for _, item := range apiResponse.Result.List {
 		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
+		volumeAmount, _ := strconv.ParseFloat(strings.TrimSpace(item[5]), 64)
 
 		closePrices = append(closePrices, closePrice)
+		volumeValues = append(volumeValues, volumeAmount*closePrice)
 	}
 	reverse(closePrices)
-	// Eliminate live value, just return most recent closed values
-	return closePrices[:len(closePrices)-1], nil
+	reverse(volumeValues)
 
+	// Eliminate live value, just return most recent closed values
+	return &model.CoinMetrics{
+		ClosePriceClosed:  closePrices[:len(closePrices)-1],
+		VolumeValueClosed: volumeValues[:len(volumeValues)-1],
+	}, nil
 }
 
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
-		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.MetricsWindowSize)
+		coinMetrics, err := fe.initClosedCoinMetrics(symbol, fe.cfg.MarketConstants.MetricsWindowSize)
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
 			continue
 		}
-		coinMetrics := fe.getOrCreateCoinMetrics(symbol)
-		coinMetrics.ClosePriceClosed = closePrices
+		fe.Coins[symbol] = coinMetrics
 
 		_, err = fe.calculateAndStoreMarketMetrics(symbol)
 		if err != nil {
@@ -220,18 +227,13 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSIDataLive, metrics.RSIDataClosed, FindMedian(metrics.VolumeValueClosed))
+			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSILive, metrics.RSIClosed, FindMedian(metrics.VolumeValueClosed))
 		}
 
 		mapMutex.Unlock()
 		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
 	}
 }
-
-//
-//func DebugCalculateRSI(prices []float64, n int) float64 {
-//	return calculateRSI(prices, n)
-//}
 
 func buildUrl(host string, path string, params map[string]string) string {
 	baseUrl, err := url.Parse(host)
