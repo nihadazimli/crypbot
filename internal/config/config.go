@@ -41,9 +41,9 @@ type RequestPathsConfig struct {
 }
 
 type MarketConstantsConfig struct {
-	KlineInterval int    `yaml:"kline_interval"`
-	KlineCategory string `yaml:"kline_category"`
-	RSIWindowSize int    `yaml:"rsi_window_size"`
+	KlineInterval     int    `yaml:"kline_interval"`
+	KlineCategory     string `yaml:"kline_category"`
+	MetricsWindowSize int    `yaml:"metrics_window_size"`
 }
 
 type TraderConfig struct {

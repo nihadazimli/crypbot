@@ -1,13 +1,13 @@
 package model
 
 type WSRawKline struct {
-	Data  []KlineData `json:"data"`
-	Topic string      `json:"topic"`
-	Ts    int64       `json:"ts"`
-	Type  string      `json:"type"`
+	Data  []WSKlineData `json:"data"`
+	Topic string        `json:"topic"`
+	Ts    int64         `json:"ts"`
+	Type  string        `json:"type"`
 }
 
-type KlineData struct {
+type WSKlineData struct {
 	Open      float64 `json:"open,string"`
 	Close     float64 `json:"close,string"`
 	High      float64 `json:"high,string"`
@@ -21,10 +21,12 @@ type KlineData struct {
 	Interval  string  `json:"interval"`
 }
 
-type InternalKline struct {
+// WSInternalKline is filtered kline data from websocket to internal logic for processing
+type WSInternalKline struct {
 	Symbol  string
 	Close   float64
 	Confirm bool
+	Volume  float64
 }
 
 type KlineApiResponse struct {
@@ -35,4 +37,11 @@ type KlineApiResponse struct {
 		Category string     `json:"category"`
 		List     [][]string `json:"list"`
 	} `json:"result"`
+}
+
+type CoinMetrics struct {
+	ClosePriceClosed  []float64
+	VolumeValueClosed []float64
+	RSIDataClosed     float64
+	RSIDataLive       float64
 }

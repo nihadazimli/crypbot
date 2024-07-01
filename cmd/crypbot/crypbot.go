@@ -11,7 +11,7 @@ import (
 func main() {
 	cfg := config.GetConfig()
 
-	klineReceived := make(chan model.InternalKline)
+	klineReceived := make(chan model.WSInternalKline)
 	rsiReady := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 
@@ -21,7 +21,7 @@ func main() {
 
 	go fe.ProcessKline()
 	go fe.ProcessRSI()
-
+	go fe.Show()
 	tc := trader.NewTraderClient(buyReady)
 
 	go tc.ProcessBuySignal(fe)

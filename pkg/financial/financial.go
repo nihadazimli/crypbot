@@ -2,13 +2,14 @@ package financial
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,31 +21,27 @@ var (
 )
 
 type Engine struct {
-	httpClient      *http.Client
-	cfg             *config.Config
-	KlineDataClosed map[string][]float64
-	RSIDataClosed   map[string]float64
-	RSIDataLive     map[string]float64
-	rsiReady        chan string
-	buyReady        chan string
-	klineReceived   chan model.InternalKline
+	httpClient    *http.Client
+	cfg           *config.Config
+	rsiReady      chan string
+	buyReady      chan string
+	klineReceived chan model.WSInternalKline
+	Coins         map[string]*model.CoinMetrics
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
-func NewFinancialEngine(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
+func NewFinancialEngine(klineReceived chan model.WSInternalKline, rsiReady chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
-		httpClient:      &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:             config.GetConfig(),
-		KlineDataClosed: make(map[string][]float64),
-		RSIDataClosed:   make(map[string]float64),
-		RSIDataLive:     make(map[string]float64),
-		klineReceived:   klineReceived,
-		rsiReady:        rsiReady,
-		buyReady:        buyReady,
+		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:           config.GetConfig(),
+		Coins:         make(map[string]*model.CoinMetrics),
+		klineReceived: klineReceived,
+		rsiReady:      rsiReady,
+		buyReady:      buyReady,
 	}
 }
 
-func Start(klineReceived chan model.InternalKline, rsiReady chan string, buyReady chan string, timeout int) *Engine {
+func Start(klineReceived chan model.WSInternalKline, rsiReady chan string, buyReady chan string, timeout int) *Engine {
 	fe := NewFinancialEngine(klineReceived, rsiReady, buyReady, timeout)
 	fe.loadRecentKlineData()
 
@@ -52,70 +49,83 @@ func Start(klineReceived chan model.InternalKline, rsiReady chan string, buyRead
 }
 
 func (fe *Engine) ProcessKline() {
-
 	for klineDatapoint := range fe.klineReceived {
 		if klineDatapoint.Confirm {
-			// Processing closed Kline data
-			if _, exists := fe.KlineDataClosed[klineDatapoint.Symbol]; !exists {
-				// Hold enough Kline data per symbol for RSI
-				fe.KlineDataClosed[klineDatapoint.Symbol] = make([]float64, 0, fe.cfg.MarketConstants.RSIWindowSize+1)
-			}
-
-			klineData := append(fe.KlineDataClosed[klineDatapoint.Symbol], klineDatapoint.Close)
-
-			mapMutex.Lock()
-			if len(klineData) > fe.cfg.MarketConstants.RSIWindowSize {
-				// Keep only latest RequiredKlineThreshold number of records
-				klineData = klineData[len(klineData)-fe.cfg.MarketConstants.RSIWindowSize:]
-				fe.KlineDataClosed[klineDatapoint.Symbol] = klineData
-				fe.rsiReady <- klineDatapoint.Symbol
-			}
-
-			fe.KlineDataClosed[klineDatapoint.Symbol] = klineData
-			mapMutex.Unlock()
+			fe.processClosedKline(klineDatapoint)
 		} else {
-			// Processing live Kline data
-			if closedData, ok := fe.KlineDataClosed[klineDatapoint.Symbol]; ok && len(closedData) == fe.cfg.MarketConstants.RSIWindowSize {
-				// Calculate live RSI using the last closed data points plus a live data point
-				liveData := closedData[1:]
-				liveData = append(liveData, klineDatapoint.Close) // Append live data point
-				fe.RSIDataLive[klineDatapoint.Symbol] = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
-			}
-
+			fe.processLiveKline(klineDatapoint)
 		}
 	}
 }
 
+func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
+	coinMetrics := fe.getOrCreateCoinMetrics(klineDatapoint.Symbol)
+
+	mapMutex.Lock()
+	defer mapMutex.Unlock()
+
+	// Append new closed prices and volumes to their respective slices
+	coinMetrics.ClosePriceClosed = append(coinMetrics.ClosePriceClosed, klineDatapoint.Close)
+	coinMetrics.VolumeValueClosed = append(coinMetrics.VolumeValueClosed, klineDatapoint.Close*klineDatapoint.Volume)
+
+	// Ensure the slices do not exceed the defined window size
+	if len(coinMetrics.ClosePriceClosed) > fe.cfg.MarketConstants.MetricsWindowSize {
+		coinMetrics.ClosePriceClosed = coinMetrics.ClosePriceClosed[len(coinMetrics.ClosePriceClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
+		coinMetrics.VolumeValueClosed = coinMetrics.VolumeValueClosed[len(coinMetrics.VolumeValueClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
+
+		fe.rsiReady <- klineDatapoint.Symbol
+	}
+}
+
+func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
+	coinMetrics, ok := fe.Coins[klineDatapoint.Symbol]
+	if ok && len(coinMetrics.ClosePriceClosed) == fe.cfg.MarketConstants.MetricsWindowSize {
+		// Construct a dataset that includes the last MetricsWindowSize-1 closed prices and the live price
+		liveData := append(coinMetrics.ClosePriceClosed[1:], klineDatapoint.Close)
+		coinMetrics.RSIDataLive = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+	}
+}
+
+// getOrCreateCoinMetrics ensures that each coin's metric structure is initialized before use
+func (fe *Engine) getOrCreateCoinMetrics(symbol string) *model.CoinMetrics {
+	mapMutex.Lock()
+	defer mapMutex.Unlock()
+
+	metrics, exists := fe.Coins[symbol]
+	if !exists {
+		// Initialize the coin if it does not exist
+		metrics = &model.CoinMetrics{
+			ClosePriceClosed:  make([]float64, 0, fe.cfg.MarketConstants.MetricsWindowSize+1),
+			VolumeValueClosed: make([]float64, 0, fe.cfg.MarketConstants.MetricsWindowSize+1),
+		}
+		fe.Coins[symbol] = metrics
+	}
+	return metrics
+}
+
 func (fe *Engine) ProcessRSI() {
-	for topic := range fe.rsiReady {
-		rsi, err := fe.calculatedAndStoreRSI(topic)
+	for symbol := range fe.rsiReady {
+		rsi, err := fe.calculateAndStoreMarketMetrics(symbol)
 		if err != nil {
 			log.Println("Error calculating RSI:", err)
 			continue
 		}
-		fe.evaluateRSI(topic, rsi)
+		fe.evaluateRSI(symbol, rsi)
 	}
 }
 
-func (fe *Engine) calculatedAndStoreRSI(topic string) (float64, error) {
+func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error) {
 	mapMutex.Lock()
-	klineData, exists := fe.KlineDataClosed[topic]
-	mapMutex.Unlock()
+	defer mapMutex.Unlock()
 
-	if canCalculateRSI(exists, klineData, fe.cfg.MarketConstants.RSIWindowSize) {
-		return 0, errors.New("insufficient data to calculate RSI for topic: " + topic)
+	coinMetrics, exists := fe.Coins[symbol]
+	if !exists || len(coinMetrics.ClosePriceClosed) < fe.cfg.MarketConstants.MetricsWindowSize {
+		return 0, fmt.Errorf("insufficient data to calculate RSI for symbol: %s", symbol)
 	}
 
-	rsi := calculateRSI(klineData, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
+	rsi := calculateRSI(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
 
-	mapMutex.Lock()
-	newMap := make(map[string]float64)
-	for k, v := range fe.RSIDataClosed {
-		newMap[k] = v
-	}
-	newMap[topic] = rsi
-	fe.RSIDataClosed = newMap
-	mapMutex.Unlock()
+	fe.Coins[symbol].RSIDataClosed = rsi
 
 	return rsi, nil
 }
@@ -168,6 +178,7 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 	var closePrices []float64
 	for _, item := range apiResponse.Result.List {
 		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
+
 		closePrices = append(closePrices, closePrice)
 	}
 	reverse(closePrices)
@@ -178,27 +189,45 @@ func (fe *Engine) FetchRecentKlines(symbol string, n int) ([]float64, error) {
 
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
-		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.RSIWindowSize)
+		closePrices, err := fe.FetchRecentKlines(symbol, fe.cfg.MarketConstants.MetricsWindowSize)
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
+			continue
 		}
-		fe.KlineDataClosed[symbol] = closePrices
+		coinMetrics := fe.getOrCreateCoinMetrics(symbol)
+		coinMetrics.ClosePriceClosed = closePrices
 
+		_, err = fe.calculateAndStoreMarketMetrics(symbol)
+		if err != nil {
+			log.Println("Error calculating recent kline data for", symbol, ":", err)
+			continue
+		}
 	}
 }
 
-//func (fe *Engine) Show() {
-//	for {
-//		mapMutex.Lock()
-//
-//		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
-//		for topic, prices := range fe.RSIDataClosed {
-//			fmt.Printf("%s: %v\n", topic, prices) // Print each topic and its prices on a new line
-//		}
-//		mapMutex.Unlock()
-//		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
-//	}
-//}
+func (fe *Engine) Show() {
+
+	// Extract and sort the keys (symbols) from the Coins map
+	var symbols []string
+	for symbol := range fe.Coins {
+		symbols = append(symbols, symbol)
+	}
+	sort.Strings(symbols) // Sorts the slice of symbols in increasing order
+
+	for {
+		mapMutex.Lock()
+
+		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
+		for _, symbol := range symbols {
+			metrics := fe.Coins[symbol]
+			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSIDataLive, metrics.RSIDataClosed, FindMedian(metrics.VolumeValueClosed))
+		}
+
+		mapMutex.Unlock()
+		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
+	}
+}
+
 //
 //func DebugCalculateRSI(prices []float64, n int) float64 {
 //	return calculateRSI(prices, n)
@@ -278,10 +307,6 @@ func ema(values []float64, n int) []float64 {
 	return emaValues
 }
 
-func canCalculateRSI(exists bool, klineData []float64, requiredKlineThreshold int) bool {
-	return !exists || len(klineData) < requiredKlineThreshold
-}
-
 // determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
 // it returns startTime and endTime in milliseconds since the epoch.
 func determineTimeInterval(n int, interval int) (int64, int64) {
@@ -297,4 +322,26 @@ func reverse(numbers []float64) {
 	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
 		numbers[i], numbers[j] = numbers[j], numbers[i]
 	}
+}
+
+// FindMedian calculates the median of a slice of float64 numbers.
+func FindMedian(values []float64) float64 {
+	n := len(values)
+	if n == 0 {
+		return 0 // or return an error indicating no values are present
+	}
+
+	// Make a copy of the slice to avoid altering the original data
+	sortedValues := make([]float64, n)
+	copy(sortedValues, values)
+	sort.Float64s(sortedValues)
+
+	// Finding the median
+	midpoint := n / 2 // Get the middle index
+	if n%2 != 0 {
+		// Odd number of elements
+		return sortedValues[midpoint] // Middle element
+	}
+	// Even number of elements, return the average of the two middle values
+	return (sortedValues[midpoint-1] + sortedValues[midpoint]) / 2
 }
