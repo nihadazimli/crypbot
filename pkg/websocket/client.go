@@ -6,6 +6,7 @@ import (
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -14,10 +15,11 @@ import (
 
 type WebSocketClient struct {
 	conn           *websocket.Conn
-	klineWriteChan chan model.InternalKline
+	klineWriteChan chan model.WSInternalKline
+	writeMutex     sync.Mutex
 }
 
-func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
+func Serve(cfg *config.Config, klineReceived chan model.WSInternalKline) {
 	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.Address, nil)
 
 	if err != nil {
@@ -33,8 +35,8 @@ func Serve(cfg *config.Config, klineReceived chan model.InternalKline) {
 
 	fmt.Println("Connected.")
 
-	go c.keepAlive()
 	c.subscribe(cfg.KlineTopics)
+	go c.keepAlive()
 	c.readPump()
 
 }
@@ -49,7 +51,9 @@ func (c *WebSocketClient) subscribe(topic []string) {
 		log.Println("Failed to marshal JSON:", err)
 		return
 	}
+	c.writeMutex.Lock()
 	err = c.conn.WriteMessage(websocket.TextMessage, message)
+	c.writeMutex.Unlock()
 	if err != nil {
 		log.Println("Failed to send subscribe message:", err)
 		return
@@ -70,11 +74,13 @@ func (c *WebSocketClient) readPump() {
 
 func (c *WebSocketClient) keepAlive() {
 	for {
+		c.writeMutex.Lock()
 		err := c.conn.WriteMessage(websocket.PingMessage, nil)
 		if err != nil {
 			log.Println("Ping failed:", err)
 			return
 		}
+		c.writeMutex.Unlock()
 		time.Sleep(time.Second * 20)
 	}
 }
@@ -87,10 +93,11 @@ func (c *WebSocketClient) handle(message []byte) {
 		return
 	}
 	for _, kline := range WSKline.Data {
-		internalKline := model.InternalKline{
+		internalKline := model.WSInternalKline{
 			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
 			Close:   kline.Close,
 			Confirm: kline.Confirm,
+			Volume:  kline.Volume,
 		}
 		c.klineWriteChan <- internalKline
 	}
