@@ -47,8 +47,9 @@ type MarketConstantsConfig struct {
 }
 
 type TraderConfig struct {
-	RSIBuyValue  float64 `yaml:"rsi_buy_value"`
-	RSISellValue float64 `yaml:"rsi_sell_value"`
+	RSIBuyValue           float64 `yaml:"rsi_buy_value"`
+	RSISellValue          float64 `yaml:"rsi_sell_value"`
+	MedianVolumeThreshold float64 `yaml:"median_volume_threshold"`
 }
 
 var cfg *Config

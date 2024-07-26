@@ -22,7 +22,7 @@ func main() {
 	go fe.ProcessKline()
 	go fe.ProcessRSI()
 	go fe.Show()
-	tc := trader.NewTraderClient(buyReady)
+	tc := trader.CreateTraderClient(buyReady)
 
 	go tc.ProcessBuySignal(fe)
 

@@ -30,10 +30,10 @@ type Engine struct {
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
-func NewFinancialEngine(klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
+func NewFinancialEngine(cfg *config.Config, klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
 		httpClient:          &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:                 config.GetConfig(),
+		cfg:                 cfg,
 		Coins:               make(map[string]*model.CoinMetrics),
 		klineReceived:       klineReceived,
 		closedKlineReceived: closedKlineReceived,
@@ -42,7 +42,8 @@ func NewFinancialEngine(klineReceived chan model.WSInternalKline, closedKlineRec
 }
 
 func Start(klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, timeout int) *Engine {
-	fe := NewFinancialEngine(klineReceived, closedKlineReceived, buyReady, timeout)
+	cfg := config.GetConfig()
+	fe := NewFinancialEngine(cfg, klineReceived, closedKlineReceived, buyReady, timeout)
 	fe.loadRecentKlineData()
 
 	return fe
@@ -56,6 +57,20 @@ func (fe *Engine) ProcessKline() {
 			fe.processLiveKline(klineDatapoint)
 		}
 	}
+}
+
+func (fe *Engine) GetRSIClosed(symbol string) (float64, bool) {
+	if metrics, exists := fe.Coins[symbol]; exists {
+		return metrics.RSIClosed, true
+	}
+	return -1.0, false
+}
+
+func (fe *Engine) GetVolumeValueMedian(symbol string) (float64, bool) {
+	if metrics, exists := fe.Coins[symbol]; exists {
+		return metrics.VolumeValueMedian, true
+	}
+	return -1.0, false
 }
 
 func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
@@ -124,7 +139,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error)
 	}
 
 	rsi := calculateRSI(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
-	volumeValueMedian := FindMedian(coinMetrics.VolumeValueClosed) * float64(fe.cfg.MarketConstants.MetricsWindowSize)
+	volumeValueMedian := findMedian(coinMetrics.VolumeValueClosed) * float64(fe.cfg.MarketConstants.MetricsWindowSize)
 
 	fe.Coins[symbol].RSIClosed = rsi
 	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
@@ -329,8 +344,8 @@ func reverse(numbers []float64) {
 	}
 }
 
-// FindMedian calculates the median of a slice of float64 numbers.
-func FindMedian(values []float64) float64 {
+// findMedian calculates the median of a slice of float64 numbers.
+func findMedian(values []float64) float64 {
 	n := len(values)
 	if n == 0 {
 		return 0 // or return an error indicating no values are present
