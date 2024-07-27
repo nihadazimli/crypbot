@@ -20,6 +20,14 @@ var (
 	mapMutex sync.Mutex
 )
 
+type EngineInterface interface {
+	ProcessKline()
+	GetRSIClosed(symbol string) (float64, bool)
+	GetVolumeValueMedian(symbol string) (float64, bool)
+	ProcessRSI()
+	Show()
+}
+
 type Engine struct {
 	httpClient          *http.Client
 	cfg                 *config.Config

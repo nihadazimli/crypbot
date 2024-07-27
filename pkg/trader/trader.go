@@ -4,32 +4,38 @@ import (
 	"context"
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/config"
+	"github.com/nihadazimli/crypbot/internal/market_api"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	bybit "github.com/wuhewuhe/bybit.go.api"
 	"log"
+	"strconv"
 )
 
+type BybitClient interface {
+	NewOrderBookService(map[string]interface{})
+	NewTradeService(map[string]interface{})
+}
+
 type Client struct {
-	buyReady    chan string
-	positions   map[string]bool
-	cfg         *config.Config
-	bybitClient *bybit.Client
+	buyReady  chan string
+	positions map[string]bool
+	cfg       *config.Config
+	market    market_api.MarketAPI
 }
 
-// CreateTraderClient prepares and returns a new trader client for use in production.
-func CreateTraderClient(buyReady chan string) *Client {
+// Start prepares and returns a new trader client for use in production.
+func Start(buyReady chan string, market market_api.MarketAPI) *Client {
 	cfg := config.GetConfig()
-	client := bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.TESTNET))
 
-	return NewTraderClient(buyReady, cfg, client)
+	return NewTraderClient(buyReady, cfg, market)
 }
 
-func NewTraderClient(buyReady chan string, cfg *config.Config, client *bybit.Client) *Client {
+func NewTraderClient(buyReady chan string, cfg *config.Config, client market_api.MarketAPI) *Client {
 	return &Client{
-		buyReady:    buyReady,
-		cfg:         cfg,
-		bybitClient: client,
-		positions:   make(map[string]bool),
+		buyReady:  buyReady,
+		cfg:       cfg,
+		market:    client,
+		positions: make(map[string]bool),
 	}
 }
 
@@ -56,7 +62,7 @@ func (tc *Client) placeBuyOrder(symbol string, qty float64, price float64) {
 		"price":       price, //"10000",
 		"timeInForce": "GTC",
 	}
-	orderResult, err := tc.bybitClient.NewTradeService(params).PlaceOrder(context.Background())
+	orderResult, err := tc.market.PlaceOrder(context.Background(), params)
 	if err != nil {
 		log.Println("Failed to place buy order:", err)
 		return
@@ -84,7 +90,7 @@ func (tc *Client) sell(coinKlineSymbol string) {
 
 }
 
-func (tc *Client) buyConditionsMet(fc *financial.Engine, symbol string) bool {
+func (tc *Client) buyConditionsMet(fc financial.EngineInterface, symbol string) bool {
 
 	rsiClosed, ok := fc.GetRSIClosed(symbol)
 	if !ok {
@@ -117,8 +123,18 @@ func (tc *Client) buyConditionsMet(fc *financial.Engine, symbol string) bool {
 }
 
 func (tc *Client) getBestBidPrice(symbol string) float64 {
-	tc.bybitClient.NewOrderBookService() //get order book data
+	params := map[string]interface{}{
+		"abc": 1,
+	}
+	res, err := tc.market.GetOrderBook(context.Background(), params)
+	if err != nil {
+		return 0
+	} //get order book data
 	//out of 50 get the latest
 	//return the latest
-	return 0.0
+	result, err := strconv.ParseFloat(res, 64)
+	if err != nil {
+		return 0
+	}
+	return result
 }
