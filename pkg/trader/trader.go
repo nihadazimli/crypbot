@@ -92,14 +92,14 @@ func (tc *Client) sell(coinKlineSymbol string) {
 
 func (tc *Client) buyConditionsMet(fc financial.EngineInterface, symbol string) bool {
 
-	rsiClosed, ok := fc.GetRSIClosed(symbol)
-	if !ok {
+	rsiClosed, rsiOk := fc.GetRSIClosed(symbol)
+	if !rsiOk {
 		log.Printf("No RSI data available for %s", symbol)
 		return false
 	}
 
-	volumeMedian, ok := fc.GetVolumeValueMedian(symbol)
-	if !ok {
+	volumeMedian, volumeOk := fc.GetVolumeValueMedian(symbol)
+	if !volumeOk {
 		log.Printf("No volume data available for %s", symbol)
 		return false
 	}
