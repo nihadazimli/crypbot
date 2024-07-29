@@ -1,8 +1,8 @@
 package trader
 
 import (
+	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/internal/market_api"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -16,7 +16,7 @@ type MockFinancialEngine struct {
 
 type MockMarket struct {
 	mock.Mock
-	market_api.MarketAPI
+	broker_api.BrokerAPI
 }
 
 func (fe *MockFinancialEngine) GetRSIClosed(symbol string) (float64, bool) {
@@ -87,7 +87,7 @@ func TestBuyConditionsMetTableDriven(t *testing.T) {
 			MedianVolumeThreshold: 40000,
 		},
 	}
-	traderClient := NewTraderClient(make(chan string, 10), cfg, mockMarket)
+	traderClient := NewTraderClient(make(chan string, 10), cfg, mockMarket, mockFE)
 
 	// Configure the mock based on test cases
 	for _, tc := range testCases {
@@ -98,7 +98,7 @@ func TestBuyConditionsMetTableDriven(t *testing.T) {
 	// Execute the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := traderClient.buyConditionsMet(mockFE, tc.symbol)
+			result := traderClient.buyConditionsMet(tc.symbol)
 			assert.Equal(t, tc.expected, result)
 		})
 	}

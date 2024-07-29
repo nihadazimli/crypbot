@@ -3,80 +3,94 @@ package trader
 import (
 	"context"
 	"fmt"
+	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/internal/market_api"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	bybit "github.com/wuhewuhe/bybit.go.api"
 	"log"
 	"strconv"
+	"time"
 )
-
-type BybitClient interface {
-	NewOrderBookService(map[string]interface{})
-	NewTradeService(map[string]interface{})
-}
 
 type Client struct {
 	buyReady  chan string
 	positions map[string]bool
 	cfg       *config.Config
-	market    market_api.MarketAPI
+	market    broker_api.BrokerAPI
+	financial financial.EngineInterface
+}
+
+type OrderParams struct {
+	Symbol      string
+	LimitPrice  float64
+	OrderAmount float64
+	StopLimit   float64
 }
 
 // Start prepares and returns a new trader client for use in production.
-func Start(buyReady chan string, market market_api.MarketAPI) *Client {
+func Start(buyReady chan string, market broker_api.BrokerAPI, financial financial.EngineInterface) *Client {
 	cfg := config.GetConfig()
 
-	return NewTraderClient(buyReady, cfg, market)
+	return NewTraderClient(buyReady, cfg, market, financial)
 }
 
-func NewTraderClient(buyReady chan string, cfg *config.Config, client market_api.MarketAPI) *Client {
+func NewTraderClient(buyReady chan string, cfg *config.Config, market broker_api.BrokerAPI, financial financial.EngineInterface) *Client {
 	return &Client{
 		buyReady:  buyReady,
 		cfg:       cfg,
-		market:    client,
+		market:    market,
+		financial: financial,
 		positions: make(map[string]bool),
 	}
 }
 
-func (tc *Client) ProcessBuySignal(fc *financial.Engine) {
+func (tc *Client) ProcessBuySignal(ctx context.Context) {
 	for symbol := range tc.buyReady {
-		if tc.buyConditionsMet(fc, symbol) {
-			price := tc.getBestBidPrice(symbol)
+		if tc.buyConditionsMet(symbol) {
 
-			tc.placeBuyOrder(symbol, 1, price)
-			tc.ProcessSell(fc, symbol, 1)
+			orderParams, err := tc.calculateOrderDetails(ctx, symbol)
+			if err != nil {
+				log.Printf("Error calculating order details: %v", err)
+				continue
+			}
+			tc.placeBuyOrder(ctx, orderParams)
+			tc.ProcessSell(symbol, 1)
+
 		}
-
 	}
 }
-func (tc *Client) placeBuyOrder(symbol string, qty float64, price float64) {
+
+func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) {
 
 	params := map[string]interface{}{
 		"category":    "spot",
-		"symbol":      symbol,
+		"symbol":      orderParams.Symbol,
 		"side":        "Buy",
 		"positionIdx": 0,
 		"orderType":   "Limit",
-		"qty":         qty,   //"0.001",
-		"price":       price, //"10000",
-		"timeInForce": "GTC",
+		"qty":         orderParams.OrderAmount,
+		"price":       orderParams.LimitPrice,
+		"stopLoss":    orderParams.StopLimit,
 	}
-	orderResult, err := tc.market.PlaceOrder(context.Background(), params)
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	defer cancel()
+
+	orderResult, err := tc.market.PlaceOrder(ctxWithTimeout, params)
 	if err != nil {
 		log.Println("Failed to place buy order:", err)
 		return
 	}
 	fmt.Println("Order placed: ", bybit.PrettyPrint(orderResult))
-	tc.positions[symbol] = true
+	tc.positions[orderParams.Symbol] = true
 }
 
-func (tc *Client) ProcessSell(fc *financial.Engine, coinSymbol string, stop_loss float64) {
+func (tc *Client) ProcessSell(coinSymbol string, stop_loss float64) {
 	//if !(slices.Contains(tc.positions, coinSymbol)) {
 	//
 	//}
 	//
-	//for fc.RSIClosed[coinSymbol] < 40 || fc.TickerDataMap[coinSymbol] != stop_loss {
+	//for tc.financial.RSIClosed[coinSymbol] < 40 || tc.financial.TickerDataMap[coinSymbol] != stop_loss {
 	//
 	//}
 	//
@@ -90,15 +104,15 @@ func (tc *Client) sell(coinKlineSymbol string) {
 
 }
 
-func (tc *Client) buyConditionsMet(fc financial.EngineInterface, symbol string) bool {
+func (tc *Client) buyConditionsMet(symbol string) bool {
 
-	rsiClosed, rsiOk := fc.GetRSIClosed(symbol)
+	rsiClosed, rsiOk := tc.financial.GetRSIClosed(symbol)
 	if !rsiOk {
 		log.Printf("No RSI data available for %s", symbol)
 		return false
 	}
 
-	volumeMedian, volumeOk := fc.GetVolumeValueMedian(symbol)
+	volumeMedian, volumeOk := tc.financial.GetVolumeValueMedian(symbol)
 	if !volumeOk {
 		log.Printf("No volume data available for %s", symbol)
 		return false
@@ -137,4 +151,41 @@ func (tc *Client) getBestBidPrice(symbol string) float64 {
 		return 0
 	}
 	return result
+}
+
+func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (OrderParams, error) {
+	bestBidPrice := tc.getBestBidPrice(symbol)
+	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
+	if !ok {
+		return OrderParams{}, fmt.Errorf("cannot get current price for %s", symbol)
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	defer cancel()
+
+	accountBalance, err := tc.market.GetAccountBalance(ctxWithTimeout)
+	if err != nil {
+		return OrderParams{}, fmt.Errorf("cannot get account balance for %s: %v", symbol, err)
+	}
+
+	var limitPrice float64
+	if bestBidPrice >= currentPrice {
+		limitPrice = bestBidPrice
+	} else {
+		limitPrice = (bestBidPrice + currentPrice) / 2
+	}
+	orderAmount := accountBalance
+	stopLimit := 0.95 * limitPrice
+
+	return OrderParams{
+		Symbol:      symbol,
+		LimitPrice:  limitPrice,
+		OrderAmount: orderAmount,
+		StopLimit:   stopLimit,
+	}, nil
+
+}
+
+func (tc *Client) getAPITimeoutDuration() time.Duration {
+	return time.Duration(tc.cfg.Broker.API.Timeout) * time.Second
 }
