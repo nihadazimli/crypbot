@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
+	"github.com/nihadazimli/crypbot/internal/numutils"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"log"
 	"time"
@@ -157,7 +158,8 @@ func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (bro
 	if bestBidPrice >= currentPrice {
 		limitPrice = bestBidPrice
 	} else {
-		limitPrice = (bestBidPrice + currentPrice) / 2
+		averagePrice := (bestBidPrice + currentPrice) / 2.0
+		limitPrice = numutils.RoundDownToSamePrecision(averagePrice, bestBidPrice)
 	}
 	orderAmount := accountBalance
 	stopLimit := 0.95 * limitPrice
