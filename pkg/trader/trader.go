@@ -112,6 +112,7 @@ func (tc *Client) executeSellOrder(ctx context.Context, symbol string) bool {
 		log.Println("Failed to get current price", symbol)
 		return false
 	}
+	fmt.Println(bestAskPrice, currentPrice)
 	return true
 	//1. Get best ask price
 	//2. Get the current price (closedPrice in kline)
