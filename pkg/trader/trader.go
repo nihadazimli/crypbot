@@ -6,7 +6,6 @@ import (
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/financial"
-	bybit "github.com/wuhewuhe/bybit.go.api"
 	"log"
 	"strconv"
 	"time"
@@ -53,14 +52,15 @@ func (tc *Client) ProcessBuySignal(ctx context.Context) {
 				log.Printf("Error calculating order details: %v", err)
 				continue
 			}
-			tc.placeBuyOrder(ctx, orderParams)
-			tc.ProcessSell(symbol, 1)
-
+			success := tc.placeBuyOrder(ctx, orderParams)
+			if success {
+				tc.ProcessSell(ctx, symbol)
+			}
 		}
 	}
 }
 
-func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) {
+func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) bool {
 
 	params := map[string]interface{}{
 		"category":  "spot",
@@ -78,13 +78,14 @@ func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) {
 	orderResult, err := tc.broker.PlaceOrder(ctxWithTimeout, params)
 	if err != nil {
 		log.Println("Failed to place buy order:", err)
-		return
+		return false
 	}
-	fmt.Println("Order placed: ", bybit.PrettyPrint(orderResult))
+	fmt.Println("Buy order placed successfully:", orderResult.Result.OrderId)
 	tc.positions[orderParams.Symbol] = true
+	return true
 }
 
-func (tc *Client) ProcessSell(coinSymbol string, stop_loss float64) {
+func (tc *Client) ProcessSell(ctx context.Context, coinSymbol string) {
 	//if !(slices.Contains(tc.positions, coinSymbol)) {
 	//
 	//}
@@ -92,7 +93,6 @@ func (tc *Client) ProcessSell(coinSymbol string, stop_loss float64) {
 	//for tc.financial.RSIClosed[coinSymbol] < 40 || tc.financial.TickerDataMap[coinSymbol] != stop_loss {
 	//
 	//}
-	//
 	if tc.positions[coinSymbol] {
 		fmt.Println("Process sell: ", coinSymbol)
 		delete(tc.positions, coinSymbol)
