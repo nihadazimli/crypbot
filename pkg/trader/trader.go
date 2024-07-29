@@ -7,7 +7,6 @@ import (
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"log"
-	"strconv"
 	"time"
 )
 
@@ -17,13 +16,6 @@ type Client struct {
 	cfg       *config.Config
 	broker    broker_api.BrokerAPI
 	financial financial.EngineInterface
-}
-
-type OrderParams struct {
-	Symbol      string
-	LimitPrice  float64
-	OrderAmount float64
-	StopLimit   float64
 }
 
 // Start prepares and returns a new trader client for use in production.
@@ -60,22 +52,11 @@ func (tc *Client) ProcessBuySignal(ctx context.Context) {
 	}
 }
 
-func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) bool {
-
-	params := map[string]interface{}{
-		"category":  "spot",
-		"symbol":    orderParams.Symbol,
-		"side":      "Buy",
-		"orderType": "Limit",
-		"qty":       orderParams.OrderAmount,
-		"price":     orderParams.LimitPrice,
-		"stopLoss":  orderParams.StopLimit,
-	}
-
+func (tc *Client) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) bool {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	orderResult, err := tc.broker.PlaceOrder(ctxWithTimeout, params)
+	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
 	if err != nil {
 		log.Println("Failed to place buy order:", err)
 		return false
@@ -135,28 +116,33 @@ func (tc *Client) buyConditionsMet(symbol string) bool {
 	return true
 }
 
-func (tc *Client) getBestBidPrice(symbol string) float64 {
-	params := map[string]interface{}{
-		"abc": 1,
+func (tc *Client) getBestBidPrice(ctx context.Context, symbol string) (float64, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	defer cancel()
+
+	params := broker_api.OrderBookRequestParams{
+		Symbol: symbol,
+		Limit:  1, //we only need best bid (i.e 1 result)
 	}
-	res, err := tc.broker.GetOrderBook(context.Background(), params)
+	orderBook, err := tc.broker.GetOrderBook(ctxWithTimeout, params)
+
 	if err != nil {
-		return 0
-	} //get order book data
-	//out of 50 get the latest
-	//return the latest
-	result, err := strconv.ParseFloat(res, 64)
-	if err != nil {
-		return 0
+		return 0.0, fmt.Errorf("error getting order book for %s: %v", symbol, err)
 	}
-	return result
+
+	bestBidPrice := orderBook.Bid[0].Price
+
+	return bestBidPrice, nil
 }
 
-func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (OrderParams, error) {
-	bestBidPrice := tc.getBestBidPrice(symbol)
+func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
+	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
+	if err != nil {
+		return broker_api.BuyOrderRequestParams{}, err
+	}
 	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
 	if !ok {
-		return OrderParams{}, fmt.Errorf("cannot get current price for %s", symbol)
+		return broker_api.BuyOrderRequestParams{}, fmt.Errorf("cannot get current price for %s", symbol)
 	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
@@ -164,7 +150,7 @@ func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (Ord
 
 	accountBalance, err := tc.broker.GetAccountBalance(ctxWithTimeout)
 	if err != nil {
-		return OrderParams{}, fmt.Errorf("cannot get account balance for %s: %v", symbol, err)
+		return broker_api.BuyOrderRequestParams{}, fmt.Errorf("cannot get account balance for %s: %v", symbol, err)
 	}
 
 	var limitPrice float64
@@ -176,7 +162,7 @@ func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (Ord
 	orderAmount := accountBalance
 	stopLimit := 0.95 * limitPrice
 
-	return OrderParams{
+	return broker_api.BuyOrderRequestParams{
 		Symbol:      symbol,
 		LimitPrice:  limitPrice,
 		OrderAmount: orderAmount,
