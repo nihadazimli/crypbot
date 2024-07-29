@@ -24,6 +24,7 @@ type EngineInterface interface {
 	ProcessKline()
 	GetRSIClosed(symbol string) (float64, bool)
 	GetVolumeValueMedian(symbol string) (float64, bool)
+	GetCurrentPrice(symbol string) (float64, bool)
 	ProcessRSI()
 	Show()
 }
@@ -77,6 +78,13 @@ func (fe *Engine) GetRSIClosed(symbol string) (float64, bool) {
 func (fe *Engine) GetVolumeValueMedian(symbol string) (float64, bool) {
 	if metrics, exists := fe.Coins[symbol]; exists {
 		return metrics.VolumeValueMedian, true
+	}
+	return -1.0, false
+}
+
+func (fe *Engine) GetCurrentPrice(symbol string) (float64, bool) {
+	if metrics, exists := fe.Coins[symbol]; exists {
+		return metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1], true
 	}
 	return -1.0, false
 }

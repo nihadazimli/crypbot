@@ -1,10 +1,10 @@
-package market_api
+package broker_api
 
 import (
 	"context"
 )
 
-type MarketAPI interface {
+type BrokerAPI interface {
 	PlaceOrder(ctx context.Context, params map[string]interface{}) (OrderResult, error)
 	GetOrderBook(ctx context.Context, params map[string]interface{}) (string, error)
 	GetAccountBalance(ctx context.Context) (float64, error)
