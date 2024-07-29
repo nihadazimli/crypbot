@@ -16,7 +16,7 @@ type Client struct {
 	buyReady  chan string
 	positions map[string]bool
 	cfg       *config.Config
-	market    broker_api.BrokerAPI
+	broker    broker_api.BrokerAPI
 	financial financial.EngineInterface
 }
 
@@ -38,7 +38,7 @@ func NewTraderClient(buyReady chan string, cfg *config.Config, market broker_api
 	return &Client{
 		buyReady:  buyReady,
 		cfg:       cfg,
-		market:    market,
+		broker:    market,
 		financial: financial,
 		positions: make(map[string]bool),
 	}
@@ -63,20 +63,19 @@ func (tc *Client) ProcessBuySignal(ctx context.Context) {
 func (tc *Client) placeBuyOrder(ctx context.Context, orderParams OrderParams) {
 
 	params := map[string]interface{}{
-		"category":    "spot",
-		"symbol":      orderParams.Symbol,
-		"side":        "Buy",
-		"positionIdx": 0,
-		"orderType":   "Limit",
-		"qty":         orderParams.OrderAmount,
-		"price":       orderParams.LimitPrice,
-		"stopLoss":    orderParams.StopLimit,
+		"category":  "spot",
+		"symbol":    orderParams.Symbol,
+		"side":      "Buy",
+		"orderType": "Limit",
+		"qty":       orderParams.OrderAmount,
+		"price":     orderParams.LimitPrice,
+		"stopLoss":  orderParams.StopLimit,
 	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	orderResult, err := tc.market.PlaceOrder(ctxWithTimeout, params)
+	orderResult, err := tc.broker.PlaceOrder(ctxWithTimeout, params)
 	if err != nil {
 		log.Println("Failed to place buy order:", err)
 		return
@@ -140,7 +139,7 @@ func (tc *Client) getBestBidPrice(symbol string) float64 {
 	params := map[string]interface{}{
 		"abc": 1,
 	}
-	res, err := tc.market.GetOrderBook(context.Background(), params)
+	res, err := tc.broker.GetOrderBook(context.Background(), params)
 	if err != nil {
 		return 0
 	} //get order book data
@@ -163,7 +162,7 @@ func (tc *Client) calculateOrderDetails(ctx context.Context, symbol string) (Ord
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	accountBalance, err := tc.market.GetAccountBalance(ctxWithTimeout)
+	accountBalance, err := tc.broker.GetAccountBalance(ctxWithTimeout)
 	if err != nil {
 		return OrderParams{}, fmt.Errorf("cannot get account balance for %s: %v", symbol, err)
 	}
