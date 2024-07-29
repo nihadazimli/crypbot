@@ -23,6 +23,7 @@ var (
 type EngineInterface interface {
 	ProcessKline()
 	GetRSIClosed(symbol string) (float64, bool)
+	GetRSILive(symbol string) (float64, bool)
 	GetVolumeValueMedian(symbol string) (float64, bool)
 	GetCurrentPrice(symbol string) (float64, bool)
 	ProcessRSI()
@@ -72,21 +73,28 @@ func (fe *Engine) GetRSIClosed(symbol string) (float64, bool) {
 	if metrics, exists := fe.Coins[symbol]; exists {
 		return metrics.RSIClosed, true
 	}
-	return -1.0, false
+	return fe.getDefaultMissingDataValue(), false
+}
+
+func (fe *Engine) GetRSILive(symbol string) (float64, bool) {
+	if metrics, exists := fe.Coins[symbol]; exists {
+		return metrics.RSILive, true
+	}
+	return fe.getDefaultMissingDataValue(), false
 }
 
 func (fe *Engine) GetVolumeValueMedian(symbol string) (float64, bool) {
 	if metrics, exists := fe.Coins[symbol]; exists {
 		return metrics.VolumeValueMedian, true
 	}
-	return -1.0, false
+	return fe.getDefaultMissingDataValue(), false
 }
 
 func (fe *Engine) GetCurrentPrice(symbol string) (float64, bool) {
 	if metrics, exists := fe.Coins[symbol]; exists {
 		return metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1], true
 	}
-	return -1.0, false
+	return fe.getDefaultMissingDataValue(), false
 }
 
 func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
@@ -246,6 +254,9 @@ func (fe *Engine) loadRecentKlineData() {
 	}
 }
 
+func (fe *Engine) getDefaultMissingDataValue() float64 {
+	return fe.cfg.Defaults.MissingDataValue
+}
 func (fe *Engine) Show() {
 
 	// Extract and sort the keys (symbols) from the Coins map
