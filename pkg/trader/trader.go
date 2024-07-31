@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type Client struct {
+type Trader struct {
 	buyReady  chan string
 	positions map[string]bool
 	cfg       *config.Config
@@ -20,14 +20,14 @@ type Client struct {
 }
 
 // Start prepares and returns a new trader client for use in production.
-func Start(buyReady chan string, market broker_api.BrokerAPI, financial financial.EngineInterface) *Client {
+func Start(buyReady chan string, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
 	cfg := config.GetConfig()
 
-	return NewTraderClient(buyReady, cfg, market, financial)
+	return NewTrader(buyReady, cfg, market, financial)
 }
 
-func NewTraderClient(buyReady chan string, cfg *config.Config, market broker_api.BrokerAPI, financial financial.EngineInterface) *Client {
-	return &Client{
+func NewTrader(buyReady chan string, cfg *config.Config, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
+	return &Trader{
 		buyReady:  buyReady,
 		cfg:       cfg,
 		broker:    market,
@@ -36,7 +36,7 @@ func NewTraderClient(buyReady chan string, cfg *config.Config, market broker_api
 	}
 }
 
-func (tc *Client) ProcessBuySignal(ctx context.Context) {
+func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 	for symbol := range tc.buyReady {
 		if tc.buyConditionsMet(symbol) {
 
@@ -53,7 +53,7 @@ func (tc *Client) ProcessBuySignal(ctx context.Context) {
 	}
 }
 
-func (tc *Client) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) bool {
+func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) bool {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
@@ -67,7 +67,7 @@ func (tc *Client) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyO
 	return true
 }
 
-func (tc *Client) ProcessSell(ctx context.Context, symbol string) {
+func (tc *Trader) ProcessSell(ctx context.Context, symbol string) {
 	//for tc.financial.RSIClosed[coinSymbol] < 40 || tc.financial.TickerDataMap[coinSymbol] != stop_loss {
 	//
 	//}
@@ -87,11 +87,11 @@ func (tc *Client) ProcessSell(ctx context.Context, symbol string) {
 			if rsiLive >= 40 {
 				log.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
 				if success := tc.executeSellOrder(ctx, symbol); success {
-					log.Println("Successfully executed sell order for %s", symbol)
+					log.Printf("Successfully executed sell order for %s", symbol)
 					return
 
 				} else {
-					log.Println("Failed to execute sell order for %s", symbol)
+					log.Printf("Failed to execute sell order for %s", symbol)
 				}
 			}
 
@@ -100,7 +100,7 @@ func (tc *Client) ProcessSell(ctx context.Context, symbol string) {
 
 }
 
-func (tc *Client) executeSellOrder(ctx context.Context, symbol string) bool {
+func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 	bestAskPrice, err := tc.getBestAskPrice(ctx, symbol)
 	if err != nil {
 		log.Println("Failed to get Best Ask Price for", symbol, " Err:", err)
@@ -131,7 +131,7 @@ func (tc *Client) executeSellOrder(ctx context.Context, symbol string) bool {
 	//9. If again not filled, place a market order with order size = coin balance
 }
 
-func (tc *Client) buyConditionsMet(symbol string) bool {
+func (tc *Trader) buyConditionsMet(symbol string) bool {
 
 	rsiClosed, rsiOk := tc.financial.GetRSIClosed(symbol)
 	if !rsiOk {
@@ -163,7 +163,7 @@ func (tc *Client) buyConditionsMet(symbol string) bool {
 	return true
 }
 
-func (tc *Client) calculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
+func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
 	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
 	if err != nil {
 		return broker_api.BuyOrderRequestParams{}, err
@@ -200,15 +200,15 @@ func (tc *Client) calculateBuyOrderDetails(ctx context.Context, symbol string) (
 
 }
 
-func (tc *Client) getAPITimeoutDuration() time.Duration {
+func (tc *Trader) getAPITimeoutDuration() time.Duration {
 	return time.Duration(tc.cfg.Broker.API.Timeout) * time.Second
 }
 
-func (tc *Client) getSellCheckIntervalDuration() time.Duration {
+func (tc *Trader) getSellCheckIntervalDuration() time.Duration {
 	return time.Duration(tc.cfg.Trader.SellCheckInterval) * time.Second
 }
 
-func (tc *Client) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResponse, error) {
+func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResponse, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
@@ -224,7 +224,7 @@ func (tc *Client) getOrderBook(ctx context.Context, symbol string, limit int) (b
 	return orderBook, nil
 }
 
-func (tc *Client) getBestBidPrice(ctx context.Context, symbol string) (float64, error) {
+func (tc *Trader) getBestBidPrice(ctx context.Context, symbol string) (float64, error) {
 
 	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e highest bid)
 	if err != nil {
@@ -235,7 +235,7 @@ func (tc *Client) getBestBidPrice(ctx context.Context, symbol string) (float64, 
 	return bestBidPrice, nil
 }
 
-func (tc *Client) getBestAskPrice(ctx context.Context, symbol string) (float64, error) {
+func (tc *Trader) getBestAskPrice(ctx context.Context, symbol string) (float64, error) {
 	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e. lowest ask)
 	if err != nil {
 		return 0, err

@@ -29,7 +29,7 @@ func (fe *MockFinancialEngine) GetVolumeValueMedian(symbol string) (float64, boo
 	return args.Get(0).(float64), args.Bool(1)
 }
 
-func TestBuyConditionsMetTableDriven(t *testing.T) {
+func TestBuyConditionsMet(t *testing.T) {
 	// Define test cases
 	testCases := []struct {
 		name         string
@@ -87,7 +87,7 @@ func TestBuyConditionsMetTableDriven(t *testing.T) {
 			MedianVolumeThreshold: 40000,
 		},
 	}
-	traderClient := NewTraderClient(make(chan string, 10), cfg, mockMarket, mockFE)
+	trader := NewTrader(make(chan string, 10), cfg, mockMarket, mockFE)
 
 	// Configure the mock based on test cases
 	for _, tc := range testCases {
@@ -98,7 +98,7 @@ func TestBuyConditionsMetTableDriven(t *testing.T) {
 	// Execute the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := traderClient.buyConditionsMet(tc.symbol)
+			result := trader.buyConditionsMet(tc.symbol)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
