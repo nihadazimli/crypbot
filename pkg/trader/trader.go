@@ -13,6 +13,7 @@ import (
 
 type Trader struct {
 	buyReady  chan string
+	sellReady chan string
 	positions map[string]bool
 	cfg       *config.Config
 	broker    broker_api.BrokerAPI
@@ -20,15 +21,16 @@ type Trader struct {
 }
 
 // Start prepares and returns a new trader client for use in production.
-func Start(buyReady chan string, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
+func Start(buyReady chan string, sellReady chan string, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
 	cfg := config.GetConfig()
 
-	return NewTrader(buyReady, cfg, market, financial)
+	return NewTrader(buyReady, sellReady, cfg, market, financial)
 }
 
-func NewTrader(buyReady chan string, cfg *config.Config, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
+func NewTrader(buyReady chan string, sellReady chan string, cfg *config.Config, market broker_api.BrokerAPI, financial financial.EngineInterface) *Trader {
 	return &Trader{
 		buyReady:  buyReady,
+		sellReady: sellReady,
 		cfg:       cfg,
 		broker:    market,
 		financial: financial,
@@ -62,39 +64,41 @@ func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyO
 		log.Println("Failed to place buy order:", err)
 		return false
 	}
-	fmt.Println("Buy order placed successfully:", orderResult.Result.OrderId)
+	fmt.Println("Buy order placed successfully:", orderResult.Details.OrderId)
 	tc.positions[orderParams.Symbol] = true
 	return true
 }
 
-func (tc *Trader) ProcessSell(ctx context.Context, symbol string) {
+func (tc *Trader) ProcessSell(ctx context.Context) {
 	//for tc.financial.RSIClosed[coinSymbol] < 40 || tc.financial.TickerDataMap[coinSymbol] != stop_loss {
 	//
 	//}
-	ticker := time.NewTicker(tc.getSellCheckIntervalDuration())
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Stopping sell checker")
-			return
-		case <-ticker.C:
-			rsiLive, ok := tc.financial.GetRSILive(symbol)
-			if !ok {
-				log.Println("No RSI live for symbol:", symbol)
-				break
-			}
-
-			if rsiLive >= 40 {
-				log.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
-				if success := tc.executeSellOrder(ctx, symbol); success {
-					log.Printf("Successfully executed sell order for %s", symbol)
-					return
-
-				} else {
-					log.Printf("Failed to execute sell order for %s", symbol)
+	for symbol := range tc.sellReady {
+		ticker := time.NewTicker(tc.getSellCheckIntervalDuration())
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Stopping sell checker")
+				return
+			case <-ticker.C:
+				rsiLive, ok := tc.financial.GetRSILive(symbol)
+				if !ok {
+					log.Println("No RSI live for symbol:", symbol)
+					break
 				}
-			}
 
+				if rsiLive >= 40 {
+					log.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
+					if success := tc.executeSellOrder(ctx, symbol); success {
+						log.Printf("Successfully executed sell order for %s", symbol)
+						return
+
+					} else {
+						log.Printf("Failed to execute sell order for %s", symbol)
+					}
+				}
+
+			}
 		}
 	}
 

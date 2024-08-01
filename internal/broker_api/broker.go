@@ -11,11 +11,8 @@ type BrokerAPI interface {
 }
 
 type BuyOrderResult struct {
-	RetCode    int              `json:"retCode"`
-	RetMsg     string           `json:"retMsg"`
-	Result     BuyResultDetails `json:"result"`
-	RetExtInfo struct{}         `json:"retExtInfo"`
-	Time       int64            `json:"time"`
+	Success bool
+	Details BuyResultDetails
 }
 
 type BuyResultDetails struct {

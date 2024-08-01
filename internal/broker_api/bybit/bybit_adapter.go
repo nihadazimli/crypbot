@@ -16,7 +16,7 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (float64, error) 
 	return 0.0, errors.New("not implemented")
 }
 
-func (ba *BybitAdapter) PlaceOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
 
 	requestParams := map[string]interface{}{
 		"category":  "spot",

@@ -32,6 +32,7 @@ func main() {
 	klineReceived := make(chan model.WSInternalKline)
 	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
+	sellReady := make(chan string, len(cfg.Symbols)+1)
 
 	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.TESTNET))
 	bybitAdapter := &bybit.BybitAdapter{Client: bybitClient}
@@ -43,7 +44,7 @@ func main() {
 	go fe.ProcessRSI()
 	go fe.Show()
 
-	tc := trader.Start(buyReady, bybitAdapter, fe)
+	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go tc.ProcessBuySignal(ctx)
 
 	<-ctx.Done() // Block until context is cancelled
