@@ -2,13 +2,14 @@ package trader
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/financial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"testing"
-	"time"
 )
 
 type MockFinancialEngine struct {
@@ -109,7 +110,7 @@ func TestTrader_BuyConditionsMet(t *testing.T) {
 			MedianVolumeThreshold: 40000,
 		},
 	}
-	trader := NewTrader(make(chan string, 10), cfg, mockBroker, mockFE)
+	trader := NewTrader(make(chan string, 1), make(chan string, 1), cfg, mockBroker, mockFE)
 
 	// Configure the mock based on test cases
 	for _, tc := range testCases {
@@ -172,8 +173,9 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 		},
 	}
 	buyReady := make(chan string, 1)
+	sellReady := make(chan string, 1)
 
-	trader := NewTrader(buyReady, cfg, mockBroker, mockFE)
+	trader := NewTrader(buyReady, sellReady, cfg, mockBroker, mockFE)
 
 	// Configure mocks for internal trader functions
 	for _, tc := range testCases {
@@ -199,6 +201,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 			go trader.ProcessBuySignal(ctx)
 			time.Sleep(1 * time.Second)
 			assert.Equal(t, trader.positions[tc.symbol], tc.expected)
+			assert.Equal(t, len(sellReady), 1)
 		})
 
 	}

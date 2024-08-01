@@ -3,12 +3,13 @@ package trader
 import (
 	"context"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/internal/numutils"
 	"github.com/nihadazimli/crypbot/pkg/financial"
-	"log"
-	"time"
 )
 
 type Trader struct {
@@ -49,7 +50,7 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 			}
 			success := tc.placeBuyOrder(ctx, orderParams)
 			if success {
-				tc.ProcessSell(ctx, symbol)
+				tc.sellReady <- symbol
 			}
 		}
 	}
@@ -69,11 +70,10 @@ func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyO
 	return true
 }
 
-func (tc *Trader) ProcessSell(ctx context.Context) {
-	//for tc.financial.RSIClosed[coinSymbol] < 40 || tc.financial.TickerDataMap[coinSymbol] != stop_loss {
-	//
-	//}
+func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 	for symbol := range tc.sellReady {
+		fmt.Println("Sell signal received for", symbol)
+
 		ticker := time.NewTicker(tc.getSellCheckIntervalDuration())
 		for {
 			select {
