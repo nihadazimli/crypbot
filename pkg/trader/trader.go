@@ -87,7 +87,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					break
 				}
 
-				if rsiLive >= 40 {
+				if rsiLive >= tc.getRSISellValue() {
 					log.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
 					if success := tc.executeSellOrder(ctx, symbol); success {
 						log.Printf("Successfully executed sell order for %s", symbol)
@@ -210,6 +210,10 @@ func (tc *Trader) getAPITimeoutDuration() time.Duration {
 
 func (tc *Trader) getSellCheckIntervalDuration() time.Duration {
 	return time.Duration(tc.cfg.Trader.SellCheckInterval) * time.Second
+}
+
+func (tc *Trader) getRSISellValue() float64 {
+	return tc.cfg.Trader.RSISellValue
 }
 
 func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResponse, error) {
