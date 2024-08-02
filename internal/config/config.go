@@ -15,6 +15,7 @@ type Config struct {
 	Symbols         []string              `yaml:"symbols"`
 	MarketConstants MarketConstantsConfig `yaml:"market_constants"`
 	Trader          TraderConfig          `yaml:"trader"`
+	Defaults        Defaults              `yaml:"defaults"`
 	KlineTopics     []string              `yaml:"-"`
 }
 
@@ -47,8 +48,14 @@ type MarketConstantsConfig struct {
 }
 
 type TraderConfig struct {
-	RSIBuyValue  float64 `yaml:"rsi_buy_value"`
-	RSISellValue float64 `yaml:"rsi_sell_value"`
+	RSIBuyValue           float64 `yaml:"rsi_buy_value"`
+	RSISellValue          float64 `yaml:"rsi_sell_value"`
+	MedianVolumeThreshold float64 `yaml:"median_volume_threshold"`
+	SellCheckInterval     int     `yaml:"sell_check_interval"`
+}
+
+type Defaults struct {
+	MissingDataValue float64 `yaml:"missing_data_value"`
 }
 
 var cfg *Config
