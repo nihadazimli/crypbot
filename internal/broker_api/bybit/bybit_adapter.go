@@ -66,3 +66,7 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResponse, error) {
 	return broker_api.OrderBookResponse{}, errors.New("not implemented")
 }
+
+func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellResultDetails, error) {
+	return broker_api.SellResultDetails{}, errors.New("not implemented")
+}

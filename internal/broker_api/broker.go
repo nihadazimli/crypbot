@@ -6,6 +6,7 @@ import (
 
 type BrokerAPI interface {
 	PlaceBuyOrder(ctx context.Context, params BuyOrderRequestParams) (BuyOrderResult, error)
+	PlaceSellOrder(ctx context.Context, params SellOrderRequestParams) (SellOrderResult, error)
 	GetOrderBook(ctx context.Context, params OrderBookRequestParams) (OrderBookResponse, error)
 	GetAccountBalance(ctx context.Context) (float64, error)
 }
@@ -16,8 +17,9 @@ type BuyOrderResult struct {
 }
 
 type BuyResultDetails struct {
-	OrderId     string `json:"orderId"`
-	OrderLinkId string `json:"orderLinkId"`
+	OrderId     string
+	OrderLinkId string
+	OrderAmount float64
 }
 
 type BuyOrderRequestParams struct {
@@ -25,6 +27,18 @@ type BuyOrderRequestParams struct {
 	LimitPrice  float64
 	OrderAmount float64
 	StopLimit   float64
+}
+
+type SellResultDetails struct {
+	OrderId     string
+	OrderLinkId string
+	OrderAmount float64
+}
+
+type SellOrderRequestParams struct {
+	Symbol      string
+	LimitPrice  float64
+	OrderAmount float64
 }
 
 type OrderBookRequestParams struct {

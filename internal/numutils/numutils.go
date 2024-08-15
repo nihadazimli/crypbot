@@ -6,11 +6,18 @@ import (
 	"strings"
 )
 
-// RoundDownToSamePrecision rounds the value down to the same decimal precision as the target.
-func RoundDownToSamePrecision(value float64, target float64) float64 {
+// RoundDownToPrecision rounds the value down to the same decimal precision as the target.
+func RoundDownToPrecision(value float64, target float64) float64 {
 	precision := decimalPlaces(target)
 	factor := math.Pow(10, float64(precision))
 	return math.Floor(value*factor) / factor
+}
+
+// RoundUpToPrecision rounds the value up to the same decimal precision as the target.
+func RoundUpToPrecision(value float64, target float64) float64 {
+	precision := decimalPlaces(target)
+	factor := math.Pow(10, float64(precision))
+	return math.Ceil(value*factor) / factor
 }
 
 // decimalPlaces counts the number of decimal places in a float.

@@ -142,6 +142,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 		orderBookBidPrice float64
 		orderBookAskPrice float64
 		accountBalance    float64
+		orderAmount       float64
 		accountBalanceErr error
 		expected          bool
 	}{
@@ -157,6 +158,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 			orderBookBidPrice: 340.50,
 			orderBookAskPrice: 340.30,
 			accountBalance:    100.0,
+			orderAmount:       3.405,
 			accountBalanceErr: nil,
 			expected:          true,
 		},
@@ -191,7 +193,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 		}, nil).Once()
 		mockBroker.On("PlaceBuyOrder", mock.Anything, mock.MatchedBy(func(params broker_api.BuyOrderRequestParams) bool {
 			return params.Symbol == tc.symbol && params.OrderAmount == tc.accountBalance && params.LimitPrice == tc.orderBookBidPrice
-		})).Return(broker_api.BuyOrderResult{Success: true, Details: broker_api.BuyResultDetails{OrderId: "1223", OrderLinkId: "23323"}}, nil)
+		})).Return(broker_api.BuyOrderResult{Success: true, Details: broker_api.BuyResultDetails{OrderId: "1223", OrderLinkId: "23323", OrderAmount: tc.orderAmount}}, nil)
 	}
 
 	// Execute tests
@@ -200,9 +202,53 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 			buyReady <- tc.symbol
 			go trader.ProcessBuySignal(ctx)
 			time.Sleep(1 * time.Second)
-			assert.Equal(t, trader.positions[tc.symbol], tc.expected)
+			assert.Equal(t, trader.positions[tc.symbol], tc.orderAmount)
 			assert.Equal(t, len(sellReady), 1)
 		})
 
+	}
+}
+
+func TestTrader_ProcessSellSignal(t *testing.T) {
+	testCases := []struct {
+		name         string
+		symbol       string
+		bestAskPrice float64
+		currentPrice float64
+		rsiLive      float64
+		result       bool
+	}{
+		{
+			name:         "Valid Sell Signal",
+			symbol:       "TESTCOIN",
+			bestAskPrice: 330.5,
+			currentPrice: 330.4,
+			rsiLive:      40.4,
+			result:       true,
+		},
+	}
+	mockFE := &MockFinancialEngine{}
+	mockBroker := &MockBroker{}
+	ctx := context.Background()
+
+	cfg := &config.Config{
+		Trader: config.TraderConfig{
+			RSISellValue:          40,
+			MedianVolumeThreshold: 40000,
+			SellCheckInterval:     1,
+		},
+	}
+
+	sellReady := make(chan string, 1)
+	//Configure the mocks
+	for _, tc := range testCases {
+		mockFE.On("GetRSILive", tc.symbol).Return(tc.rsiLive)
+		mockFE.
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+		})
 	}
 }
