@@ -74,37 +74,42 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 	for symbol := range tc.sellReady {
 		fmt.Println("Sell signal received for", symbol)
 
-		ticker := time.NewTicker(tc.getSellCheckIntervalDuration())
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("Stopping sell checker")
-				return
-			case <-ticker.C:
-				rsiLive, ok := tc.financial.GetRSILive(symbol)
-				if !ok {
-					log.Println("No RSI live for symbol:", symbol)
-					break // TODO: add logic to reconstruct RSI for symbol
-				}
+		go func(symbol string) {
 
-				if rsiLive >= tc.getRSISellValue() {
-					orderParams, err := tc.calculateSellOrderDetails(ctx, symbol)
-					if err != nil {
-						log.Printf("Error calculating sell order details: %v", err)
-						continue
-					}
-					log.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
-					if success := tc.executeSellOrder(ctx, orderParams); success {
-						log.Printf("Successfully executed sell order for %s", symbol)
-						delete(tc.positions, symbol)
-						return
-					} else {
-						log.Printf("Failed to execute sell order for %s", symbol)
-					}
-				}
+			ticker := time.NewTicker(tc.getSellCheckIntervalDuration())
+			defer ticker.Stop()
 
+			for {
+				select {
+				case <-ctx.Done():
+					fmt.Println("Stopping sell checker")
+					return
+				case <-ticker.C:
+					rsiLive, ok := tc.financial.GetRSILive(symbol)
+					if !ok {
+						fmt.Println("No RSI live for symbol:", symbol)
+						return // TODO: add logic to reconstruct RSI for symbol
+					}
+
+					if rsiLive >= tc.getRSISellValue() {
+						orderParams, err := tc.calculateSellOrderDetails(ctx, symbol)
+						if err != nil {
+							fmt.Printf("Error calculating sell order details: %v", err)
+							return
+						}
+						fmt.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
+						if success := tc.executeSellOrder(ctx, orderParams); success {
+							fmt.Printf("Successfully executed sell order for %s", symbol)
+							delete(tc.positions, symbol)
+							return
+						} else {
+							fmt.Printf("Failed to execute sell order for %s", symbol)
+						}
+					}
+
+				}
 			}
-		}
+		}(symbol)
 	}
 
 }
@@ -118,7 +123,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, orderParams broker_api.S
 		log.Println("Failed to place sell order:", err)
 		return false
 	}
-	fmt.Println("Sell order places successfully:", orderResult)
+	fmt.Println("Sell order placed successfully:", orderResult)
 	return true
 }
 
@@ -157,7 +162,7 @@ func (tc *Trader) calculateSellOrderDetails(ctx context.Context, symbol string) 
 	bestAskPrice, err := tc.getBestAskPrice(ctx, symbol)
 	if err != nil {
 		log.Println("Failed to get Best Ask Price for", symbol, " Err:", err)
-		return broker_api.SellOrderRequestParams{}, fmt.Errorf("Failed to get Best Ask Price for %s Err: %v", symbol, err)
+		return broker_api.SellOrderRequestParams{}, fmt.Errorf("failed to get Best Ask Price for %s Err: %v", symbol, err)
 	}
 
 	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
@@ -217,7 +222,7 @@ func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (
 		averagePrice := (bestBidPrice + currentPrice) / 2.0
 		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 	}
-	orderAmount := accountBalance
+	orderAmount := accountBalance.Total
 	stopLimit := 0.95 * limitPrice
 
 	return broker_api.BuyOrderRequestParams{
