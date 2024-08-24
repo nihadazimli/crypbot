@@ -35,7 +35,7 @@ func main() {
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
 	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.TESTNET))
-	bybitAdapter := &bybit.BybitAdapter{Client: bybitClient}
+	bybitAdapter := &bybit.BybitAdapter{HTTPClient: bybitClient}
 
 	go websocket.Serve(cfg, klineReceived)
 

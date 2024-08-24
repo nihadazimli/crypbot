@@ -32,6 +32,11 @@ func (fe *MockFinancialEngine) GetCurrentPrice(symbol string) (float64, bool) {
 	return args.Get(0).(float64), args.Bool(1)
 }
 
+func (fe *MockFinancialEngine) GetRSILive(symbol string) (float64, bool) {
+	args := fe.Called(symbol)
+	return args.Get(0).(float64), args.Bool(1)
+}
+
 type MockBroker struct {
 	mock.Mock
 	broker_api.BrokerAPI
@@ -50,6 +55,11 @@ func (b *MockBroker) GetOrderBook(ctx context.Context, params broker_api.OrderBo
 func (b *MockBroker) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
 	args := b.Called(ctx, params)
 	return args.Get(0).(broker_api.BuyOrderResult), args.Error(1)
+}
+
+func (b *MockBroker) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
+	args := b.Called(ctx, params)
+	return args.Get(0).(broker_api.SellOrderResult), args.Error(1)
 }
 
 func TestTrader_BuyConditionsMet(t *testing.T) {
@@ -211,25 +221,34 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 
 func TestTrader_ProcessSellSignal(t *testing.T) {
 	testCases := []struct {
-		name         string
-		symbol       string
-		bestAskPrice float64
-		currentPrice float64
-		rsiLive      float64
-		result       bool
+		name               string
+		symbol             string
+		bestAskPrice       float64
+		currentPrice       float64
+		currentPriceExists bool
+		limitPrice         float64
+		currentPosition    float64
+		rsiLive            float64
+		rsiLiveStatus      bool
+		positionExists     bool
 	}{
 		{
-			name:         "Valid Sell Signal",
-			symbol:       "TESTCOIN",
-			bestAskPrice: 330.5,
-			currentPrice: 330.4,
-			rsiLive:      40.4,
-			result:       true,
+			name:               "Valid Sell Signal",
+			symbol:             "TESTCOIN",
+			bestAskPrice:       330.4,
+			currentPrice:       330.4,
+			currentPriceExists: true,
+			limitPrice:         330.4,
+			currentPosition:    1,
+			rsiLive:            40.4,
+			rsiLiveStatus:      true,
+			positionExists:     false,
 		},
 	}
 	mockFE := &MockFinancialEngine{}
 	mockBroker := &MockBroker{}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	cfg := &config.Config{
 		Trader: config.TraderConfig{
@@ -240,15 +259,37 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 	}
 
 	sellReady := make(chan string, 1)
+
+	trader := NewTrader(make(chan string, 1), sellReady, cfg, mockBroker, mockFE)
+
 	//Configure the mocks
 	for _, tc := range testCases {
-		mockFE.On("GetRSILive", tc.symbol).Return(tc.rsiLive)
-		mockFE.
+		mockFE.On("GetRSILive", tc.symbol).Return(tc.rsiLive, tc.rsiLiveStatus)
+		mockBroker.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params broker_api.OrderBookRequestParams) bool {
+			return params.Symbol == tc.symbol && params.Limit == 1
+		})).Return(broker_api.OrderBookResponse{
+			Ask: []broker_api.OrderBookDetail{{Price: tc.bestAskPrice, Quantity: 1}},
+			Bid: []broker_api.OrderBookDetail{{Price: 0, Quantity: 1}},
+		}, nil).Once()
+		mockFE.On("GetCurrentPrice", tc.symbol).Return(tc.currentPrice, tc.currentPriceExists).Once()
+		mockBroker.On("PlaceSellOrder", mock.Anything, mock.MatchedBy(func(params broker_api.SellOrderRequestParams) bool {
+			return params.Symbol == tc.symbol && params.OrderAmount == tc.currentPosition && params.LimitPrice == tc.limitPrice
+		})).Return(broker_api.SellOrderResult{
+			Success: true,
+			Details: broker_api.SellResultDetails{
+				OrderId:     "123",
+				OrderLinkId: "123",
+				OrderAmount: tc.currentPosition}}, nil).Once()
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
+			sellReady <- tc.symbol
+			trader.positions[tc.symbol] = tc.currentPosition
+			go trader.ProcessSellSignal(ctx)
+			time.Sleep(3 * time.Second)
+			_, exists := trader.positions[tc.symbol]
+			assert.Equal(t, tc.positionExists, exists)
 		})
 	}
 }

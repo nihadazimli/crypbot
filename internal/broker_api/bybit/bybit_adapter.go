@@ -5,18 +5,51 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nihadazimli/crypbot/internal/config"
 
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	bybit "github.com/wuhewuhe/bybit.go.api"
 )
 
 type BybitAdapter struct {
-	Client *bybit.Client
+	HTTPClient *bybit.Client
+	cfg        *config.Config
 }
 
-func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (float64, error) {
-	//TODO implement me
-	return 0.0, errors.New("not implemented")
+type WalletResult struct {
+	TotalAvailableBalance float64 `json:"totalAvailableBalance"`
+}
+
+func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
+
+	requestParams := map[string]interface{}{
+		"accountType": "SPOT",
+	}
+	walletResponse, err := ba.HTTPClient.NewAccountService(requestParams).GetAccountWallet(ctx)
+	if err != nil {
+		return broker_api.AccountBalanceResult{}, err
+	}
+
+	var walletResult WalletResult
+	resultData, err := json.Marshal(walletResponse)
+	if err != nil {
+		return broker_api.AccountBalanceResult{}, err
+	}
+
+	err = json.Unmarshal(resultData, &walletResult)
+	if err != nil {
+		return broker_api.AccountBalanceResult{}, err
+	}
+
+	return broker_api.AccountBalanceResult{Total: walletResult.TotalAvailableBalance}, nil
+}
+
+func NewBybitAdapter() *BybitAdapter {
+	cfg := config.GetConfig()
+	return &BybitAdapter{
+		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.TESTNET)),
+		cfg:        cfg,
+	}
 }
 
 func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
@@ -31,7 +64,7 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 		"stopLoss":  params.StopLimit,
 	}
 
-	response, err := ba.Client.NewTradeService(requestParams).PlaceOrder(ctx)
+	response, err := ba.HTTPClient.NewTradeService(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
 		return broker_api.BuyOrderResult{}, err
@@ -67,6 +100,7 @@ func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.Orde
 	return broker_api.OrderBookResponse{}, errors.New("not implemented")
 }
 
-func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellResultDetails, error) {
-	return broker_api.SellResultDetails{}, errors.New("not implemented")
+func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
+	return broker_api.SellOrderResult{}, errors.New("not implemented")
+
 }
