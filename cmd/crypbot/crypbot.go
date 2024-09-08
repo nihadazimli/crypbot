@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
+	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/broker_api/bybit"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/pkg/financial"
-	"github.com/nihadazimli/crypbot/pkg/model"
-	"github.com/nihadazimli/crypbot/pkg/trader"
-	"github.com/nihadazimli/crypbot/pkg/websocket"
 	bybitAPI "github.com/wuhewuhe/bybit.go.api"
 	"log"
 	"os"
@@ -29,23 +26,43 @@ func main() {
 
 	cfg := config.GetConfig()
 
-	klineReceived := make(chan model.WSInternalKline)
-	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
-	buyReady := make(chan string, len(cfg.Symbols)+1)
-	sellReady := make(chan string, len(cfg.Symbols)+1)
+	//klineReceived := make(chan model.WSInternalKline)
+	//closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
+	//buyReady := make(chan string, len(cfg.Symbols)+1)
+	//sellReady := make(chan string, len(cfg.Symbols)+1)
 
-	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.TESTNET))
+	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.MAINNET))
 	bybitAdapter := &bybit.BybitAdapter{HTTPClient: bybitClient}
 
-	go websocket.Serve(cfg, klineReceived)
+	balance, err := bybitAdapter.GetAccountBalance(ctx)
+	if err != nil {
+		log.Printf("Cannot get balance. err: %v\n", err)
+	}
 
-	fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
-	go fe.ProcessKline()
-	go fe.ProcessRSI()
-	go fe.Show()
+	limitPrice := 54368.10
+	stopLimit := 54000.4
+	buyParams := broker_api.BuyOrderRequestParams{
+		Symbol:      "BTCUSDT",
+		LimitPrice:  limitPrice,
+		OrderAmount: (balance.Total - 0.3) / limitPrice,
+		StopLimit:   stopLimit,
+	}
+	order, err := bybitAdapter.PlaceBuyOrder(ctx, buyParams)
 
-	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
-	go tc.ProcessBuySignal(ctx)
+	if err != nil {
+		log.Printf("Cannot place buy order %v\n", err)
+	}
+
+	log.Println(order)
+	//go websocket.Serve(cfg, klineReceived)
+
+	//fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
+	//go fe.ProcessKline()
+	//go fe.ProcessRSI()
+	//go fe.Show()
+
+	//tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
+	//go tc.ProcessBuySignal(ctx)
 
 	<-ctx.Done() // Block until context is cancelled
 }

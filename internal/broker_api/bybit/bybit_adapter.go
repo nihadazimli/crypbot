@@ -18,7 +18,9 @@ type BybitAdapter struct {
 }
 
 type WalletResult struct {
-	TotalAvailableBalance float64 `json:"totalAvailableBalance"`
+	List []struct {
+		TotalAvailableBalance string `json:"totalAvailableBalance"`
+	} `json:"list"`
 }
 
 func NewBybitAdapter() *BybitAdapter {
@@ -38,31 +40,35 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.Accou
 	if err != nil {
 		return broker_api.AccountBalanceResult{}, err
 	}
-
-	var walletResult WalletResult
-	resultData, err := json.Marshal(walletResponse)
+	resultData, err := json.Marshal(walletResponse.Result)
 	if err != nil {
 		return broker_api.AccountBalanceResult{}, err
 	}
 
+	var walletResult WalletResult
 	err = json.Unmarshal(resultData, &walletResult)
 	if err != nil {
 		return broker_api.AccountBalanceResult{}, err
 	}
 
-	return broker_api.AccountBalanceResult{Total: walletResult.TotalAvailableBalance}, nil
+	if len(walletResult.List) == 0 {
+		return broker_api.AccountBalanceResult{}, errors.New("wallet result list is empty")
+	}
+	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalAvailableBalance, 64)
+
+	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
 
 func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
-
+	fmt.Println(params)
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
 		"side":      "Buy",
 		"orderType": "Limit",
-		"qty":       params.OrderAmount,
-		"price":     params.LimitPrice,
-		"stopLoss":  params.StopLimit,
+		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
+		"price":     strconv.FormatFloat(params.LimitPrice, 'f', -1, 64),
+		//"stopLoss":   strconv.FormatFloat(params.StopLimit, 'f', -1, 64),
 	}
 
 	response, err := ba.HTTPClient.NewTradeService(requestParams).PlaceOrder(ctx)
@@ -73,7 +79,13 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 
 	// Check if the response indicates success
 	if response.RetCode != 0 {
-		return broker_api.BuyOrderResult{}, fmt.Errorf("API error: %s", response.RetMsg)
+		responseJSON, jsonErr := json.Marshal(response)
+		if jsonErr != nil {
+			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+		} else {
+			fmt.Printf("Full response: %s", string(responseJSON))
+		}
+		return broker_api.BuyOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
 	}
 
 	// Handling the Result field which is interface{}

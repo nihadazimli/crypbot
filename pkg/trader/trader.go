@@ -222,7 +222,7 @@ func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (
 		averagePrice := (bestBidPrice + currentPrice) / 2.0
 		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 	}
-	orderAmount := accountBalance.Total
+	orderAmount := accountBalance.Total / limitPrice
 	stopLimit := 0.95 * limitPrice
 
 	return broker_api.BuyOrderRequestParams{

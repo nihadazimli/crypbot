@@ -27,8 +27,8 @@ type BrokerConfig struct {
 type APIConfig struct {
 	Host         string             `yaml:"host"`
 	HostTestnet  string             `yaml:"host_testnet"`
-	Key          string             `yaml:"api_key"`
-	Secret       string             `yaml:"api_secret"`
+	Key          string             `yaml:"key"`
+	Secret       string             `yaml:"secret"`
 	Timeout      int                `yaml:"timeout"`
 	RequestPaths RequestPathsConfig `yaml:"request_paths"`
 }
