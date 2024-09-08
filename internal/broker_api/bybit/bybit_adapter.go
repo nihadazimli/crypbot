@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nihadazimli/crypbot/internal/config"
-
 	"github.com/nihadazimli/crypbot/internal/broker_api"
+	"github.com/nihadazimli/crypbot/internal/config"
 	bybit "github.com/wuhewuhe/bybit.go.api"
+	"github.com/wuhewuhe/bybit.go.api/models"
+	"strconv"
 )
 
 type BybitAdapter struct {
@@ -20,10 +21,18 @@ type WalletResult struct {
 	TotalAvailableBalance float64 `json:"totalAvailableBalance"`
 }
 
+func NewBybitAdapter() *BybitAdapter {
+	cfg := config.GetConfig()
+	return &BybitAdapter{
+		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.TESTNET)),
+		cfg:        cfg,
+	}
+}
+
 func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
 
 	requestParams := map[string]interface{}{
-		"accountType": "SPOT",
+		"accountType": "UNIFIED",
 	}
 	walletResponse, err := ba.HTTPClient.NewAccountService(requestParams).GetAccountWallet(ctx)
 	if err != nil {
@@ -42,14 +51,6 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.Accou
 	}
 
 	return broker_api.AccountBalanceResult{Total: walletResult.TotalAvailableBalance}, nil
-}
-
-func NewBybitAdapter() *BybitAdapter {
-	cfg := config.GetConfig()
-	return &BybitAdapter{
-		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.TESTNET)),
-		cfg:        cfg,
-	}
 }
 
 func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
@@ -97,7 +98,38 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 }
 
 func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResponse, error) {
-	return broker_api.OrderBookResponse{}, errors.New("not implemented")
+	orderBookService := ba.HTTPClient.NewOrderBookService()
+	orderBookService.Symbol(params.Symbol)
+	orderBookService.Limit(params.Limit)
+	orderBookService.Category(models.Category(params.Category))
+
+	orderBook, err := orderBookService.Do(ctx)
+
+	if err != nil {
+		return broker_api.OrderBookResponse{}, fmt.Errorf("cannot fetch orderbook\n symbol:%s\nerr:%v", params.Symbol, err)
+	}
+
+	fmt.Println(orderBook)
+
+	var all_asks []broker_api.OrderBookDetail
+	var all_bids []broker_api.OrderBookDetail
+
+	for _, ask := range orderBook.Asks {
+		price, _ := strconv.ParseFloat(ask[0], 64)
+		qty, _ := strconv.ParseFloat(ask[1], 64)
+
+		all_asks = append(all_asks, broker_api.OrderBookDetail{Price: price, Quantity: qty})
+	}
+	for _, bid := range orderBook.Bids {
+		price, _ := strconv.ParseFloat(bid[0], 64)
+		qty, _ := strconv.ParseFloat(bid[1], 64)
+		all_bids = append(all_bids, broker_api.OrderBookDetail{Price: price, Quantity: qty})
+	}
+
+	return broker_api.OrderBookResponse{
+		Ask: all_asks,
+		Bid: all_bids,
+	}, nil
 }
 
 func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {

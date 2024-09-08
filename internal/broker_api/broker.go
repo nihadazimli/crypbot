@@ -51,8 +51,9 @@ type SellOrderRequestParams struct {
 }
 
 type OrderBookRequestParams struct {
-	Symbol string
-	Limit  int
+	Category string
+	Symbol   string
+	Limit    int
 }
 
 type OrderBookResponse struct {
