@@ -53,6 +53,7 @@ type TraderConfig struct {
 	RSISellValue          float64 `yaml:"rsi_sell_value"`
 	MedianVolumeThreshold float64 `yaml:"median_volume_threshold"`
 	SellCheckInterval     int     `yaml:"sell_check_interval"`
+	BalanceToLeave        float64 `yaml:"balance_to_leave"`
 }
 
 type Defaults struct {

@@ -179,7 +179,7 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 		"symbol":    params.Symbol,
 		"side":      "Sell",
 		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 10, 64),
+		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
 		"price":     strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
 	}
 	fmt.Println(requestParams)

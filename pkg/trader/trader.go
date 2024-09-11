@@ -43,7 +43,7 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 	for symbol := range tc.buyReady {
 		if tc.buyConditionsMet(symbol) {
 
-			orderParams, err := tc.calculateBuyOrderDetails(ctx, symbol)
+			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
 				log.Printf("Error calculating buy order details: %v", err)
 				continue
@@ -197,7 +197,7 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 	//9. If again not filled, place a market order with order size = coin balance
 }
 
-func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
+func (tc *Trader) CalculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
 	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
 	if err != nil {
 		return broker_api.BuyOrderRequestParams{}, err
@@ -222,7 +222,7 @@ func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (
 		averagePrice := (bestBidPrice + currentPrice) / 2.0
 		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 	}
-	orderAmount := accountBalance.Total / limitPrice
+	orderAmount := (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / limitPrice
 	stopLimit := 0.95 * limitPrice
 
 	return broker_api.BuyOrderRequestParams{
