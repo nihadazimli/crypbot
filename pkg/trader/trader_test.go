@@ -47,9 +47,9 @@ func (b *MockBroker) GetAccountBalance(ctx context.Context) (float64, error) {
 	return args.Get(0).(float64), args.Error(1)
 }
 
-func (b *MockBroker) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResponse, error) {
+func (b *MockBroker) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
 	args := b.Called(ctx, params)
-	return args.Get(0).(broker_api.OrderBookResponse), args.Error(1)
+	return args.Get(0).(broker_api.OrderBookResult), args.Error(1)
 }
 
 func (b *MockBroker) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
@@ -197,13 +197,13 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 		mockBroker.On("GetAccountBalance", mock.Anything).Return(tc.accountBalance, tc.accountBalanceErr).Once()
 		mockBroker.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params broker_api.OrderBookRequestParams) bool {
 			return params.Symbol == tc.symbol && params.Limit == 1
-		})).Return(broker_api.OrderBookResponse{
+		})).Return(broker_api.OrderBookResult{
 			Ask: []broker_api.OrderBookDetail{{Price: tc.orderBookAskPrice, Quantity: 1}},
 			Bid: []broker_api.OrderBookDetail{{Price: tc.orderBookBidPrice, Quantity: 1}},
 		}, nil).Once()
 		mockBroker.On("PlaceBuyOrder", mock.Anything, mock.MatchedBy(func(params broker_api.BuyOrderRequestParams) bool {
 			return params.Symbol == tc.symbol && params.OrderAmount == tc.accountBalance && params.LimitPrice == tc.orderBookBidPrice
-		})).Return(broker_api.BuyOrderResult{Success: true, Details: broker_api.BuyResultDetails{OrderId: "1223", OrderLinkId: "23323", OrderAmount: tc.orderAmount}}, nil)
+		})).Return(broker_api.BuyOrderResult{Success: true, Details: broker_api.BuyOrderResultDetails{OrderId: "1223", OrderLinkId: "23323", OrderAmount: tc.orderAmount}}, nil)
 	}
 
 	// Execute tests
@@ -267,7 +267,7 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 		mockFE.On("GetRSILive", tc.symbol).Return(tc.rsiLive, tc.rsiLiveStatus)
 		mockBroker.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params broker_api.OrderBookRequestParams) bool {
 			return params.Symbol == tc.symbol && params.Limit == 1
-		})).Return(broker_api.OrderBookResponse{
+		})).Return(broker_api.OrderBookResult{
 			Ask: []broker_api.OrderBookDetail{{Price: tc.bestAskPrice, Quantity: 1}},
 			Bid: []broker_api.OrderBookDetail{{Price: 0, Quantity: 1}},
 		}, nil).Once()
@@ -276,7 +276,7 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 			return params.Symbol == tc.symbol && params.OrderAmount == tc.currentPosition && params.LimitPrice == tc.limitPrice
 		})).Return(broker_api.SellOrderResult{
 			Success: true,
-			Details: broker_api.SellResultDetails{
+			Details: broker_api.SellOrderResultDetails{
 				OrderId:     "123",
 				OrderLinkId: "123",
 				OrderAmount: tc.currentPosition}}, nil).Once()

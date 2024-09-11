@@ -92,7 +92,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
-						orderParams, err := tc.calculateSellOrderDetails(ctx, symbol)
+						orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
 						if err != nil {
 							fmt.Printf("Error calculating sell order details: %v", err)
 							return
@@ -158,7 +158,7 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 
 	return true
 }
-func (tc *Trader) calculateSellOrderDetails(ctx context.Context, symbol string) (broker_api.SellOrderRequestParams, error) {
+func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) (broker_api.SellOrderRequestParams, error) {
 	bestAskPrice, err := tc.getBestAskPrice(ctx, symbol)
 	if err != nil {
 		log.Println("Failed to get Best Ask Price for", symbol, " Err:", err)
@@ -246,7 +246,7 @@ func (tc *Trader) getRSISellValue() float64 {
 	return tc.cfg.Trader.RSISellValue
 }
 
-func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResponse, error) {
+func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
@@ -257,7 +257,7 @@ func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (b
 	orderBook, err := tc.broker.GetOrderBook(ctxWithTimeout, params)
 
 	if err != nil {
-		return broker_api.OrderBookResponse{}, fmt.Errorf("error getting order book for %s: %v", symbol, err)
+		return broker_api.OrderBookResult{}, fmt.Errorf("error getting order book for %s: %v", symbol, err)
 	}
 	return orderBook, nil
 }

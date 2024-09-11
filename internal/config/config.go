@@ -38,7 +38,8 @@ type WebSocketConfig struct {
 }
 
 type RequestPathsConfig struct {
-	Kline string `yaml:"kline"`
+	Kline         string `yaml:"kline"`
+	WalletBalance string `yaml:"wallet_balance"`
 }
 
 type MarketConstantsConfig struct {

@@ -7,20 +7,20 @@ import (
 type BrokerAPI interface {
 	PlaceBuyOrder(ctx context.Context, params BuyOrderRequestParams) (BuyOrderResult, error)
 	PlaceSellOrder(ctx context.Context, params SellOrderRequestParams) (SellOrderResult, error)
-	GetOrderBook(ctx context.Context, params OrderBookRequestParams) (OrderBookResponse, error)
+	GetOrderBook(ctx context.Context, params OrderBookRequestParams) (OrderBookResult, error)
 	GetAccountBalance(ctx context.Context) (AccountBalanceResult, error)
 }
 
 type BuyOrderResult struct {
 	Success bool
-	Details BuyResultDetails
+	Details BuyOrderResultDetails
 }
 
 type AccountBalanceResult struct {
 	Total float64
 }
 
-type BuyResultDetails struct {
+type BuyOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
 	OrderAmount float64
@@ -35,10 +35,10 @@ type BuyOrderRequestParams struct {
 
 type SellOrderResult struct {
 	Success bool
-	Details SellResultDetails
+	Details SellOrderResultDetails
 }
 
-type SellResultDetails struct {
+type SellOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
 	OrderAmount float64
@@ -51,12 +51,11 @@ type SellOrderRequestParams struct {
 }
 
 type OrderBookRequestParams struct {
-	Category string
-	Symbol   string
-	Limit    int
+	Symbol string
+	Limit  int
 }
 
-type OrderBookResponse struct {
+type OrderBookResult struct {
 	Ask []OrderBookDetail //Bid, buyer. Sort by price desc
 	Bid []OrderBookDetail //Ask, seller. Sort by price asc
 }

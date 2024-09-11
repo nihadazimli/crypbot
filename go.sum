@@ -25,8 +25,12 @@ github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsT
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/wuhewuhe/bybit.go.api v1.0.2 h1:mgpDVFNTQB+Fs2Zkj/wz8vS1XnxPea2bgUk2OwHaUW8=
 github.com/wuhewuhe/bybit.go.api v1.0.2/go.mod h1:vqdGvkd3yda1+XYjjRBwKm/5oCrixSbGs7yyUCvdZzU=
+github.com/wuhewuhe/bybit.go.api v1.0.4 h1:S7hSYXwa+ml25u6KJzMEUVamwNTtsaz4v/nFmxB7ydU=
+github.com/wuhewuhe/bybit.go.api v1.0.4/go.mod h1:D3X1geumXmSJdGYcazea2mx060ClfKtsnx+Vv7qNsc0=
 golang.org/x/net v0.19.0 h1:zTwKpTd2XuCqf8huc7Fo2iSy+4RHPd10s4KzeTnVr1c=
 golang.org/x/net v0.19.0/go.mod h1:CfAk/cbD4CthTvqiEl8NpboMuiuOYsAr/7NOjZJtv1U=
+golang.org/x/net v0.29.0 h1:5ORfpBpCs4HzDYoodCDBbwHzdR5UrLBZ3sOnUJmFoHo=
+golang.org/x/net v0.29.0/go.mod h1:gLkgy8jTGERgjzMic6DS9+SP0ajcu6Xu3Orq/SpETg0=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v2 v2.4.0 h1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=
