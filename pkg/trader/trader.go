@@ -43,7 +43,7 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 	for symbol := range tc.buyReady {
 		if tc.buyConditionsMet(symbol) {
 
-			orderParams, err := tc.calculateBuyOrderDetails(ctx, symbol)
+			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
 				log.Printf("Error calculating buy order details: %v", err)
 				continue
@@ -92,7 +92,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
-						orderParams, err := tc.calculateSellOrderDetails(ctx, symbol)
+						orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
 						if err != nil {
 							fmt.Printf("Error calculating sell order details: %v", err)
 							return
@@ -158,7 +158,7 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 
 	return true
 }
-func (tc *Trader) calculateSellOrderDetails(ctx context.Context, symbol string) (broker_api.SellOrderRequestParams, error) {
+func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) (broker_api.SellOrderRequestParams, error) {
 	bestAskPrice, err := tc.getBestAskPrice(ctx, symbol)
 	if err != nil {
 		log.Println("Failed to get Best Ask Price for", symbol, " Err:", err)
@@ -197,7 +197,7 @@ func (tc *Trader) calculateSellOrderDetails(ctx context.Context, symbol string) 
 	//9. If again not filled, place a market order with order size = coin balance
 }
 
-func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
+func (tc *Trader) CalculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
 	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
 	if err != nil {
 		return broker_api.BuyOrderRequestParams{}, err
@@ -222,7 +222,7 @@ func (tc *Trader) calculateBuyOrderDetails(ctx context.Context, symbol string) (
 		averagePrice := (bestBidPrice + currentPrice) / 2.0
 		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 	}
-	orderAmount := accountBalance.Total
+	orderAmount := (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / limitPrice
 	stopLimit := 0.95 * limitPrice
 
 	return broker_api.BuyOrderRequestParams{
@@ -246,7 +246,7 @@ func (tc *Trader) getRSISellValue() float64 {
 	return tc.cfg.Trader.RSISellValue
 }
 
-func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResponse, error) {
+func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (broker_api.OrderBookResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
@@ -257,7 +257,7 @@ func (tc *Trader) getOrderBook(ctx context.Context, symbol string, limit int) (b
 	orderBook, err := tc.broker.GetOrderBook(ctxWithTimeout, params)
 
 	if err != nil {
-		return broker_api.OrderBookResponse{}, fmt.Errorf("error getting order book for %s: %v", symbol, err)
+		return broker_api.OrderBookResult{}, fmt.Errorf("error getting order book for %s: %v", symbol, err)
 	}
 	return orderBook, nil
 }

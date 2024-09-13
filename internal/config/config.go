@@ -27,8 +27,8 @@ type BrokerConfig struct {
 type APIConfig struct {
 	Host         string             `yaml:"host"`
 	HostTestnet  string             `yaml:"host_testnet"`
-	Key          string             `yaml:"api_key"`
-	Secret       string             `yaml:"api_secret"`
+	Key          string             `yaml:"key"`
+	Secret       string             `yaml:"secret"`
 	Timeout      int                `yaml:"timeout"`
 	RequestPaths RequestPathsConfig `yaml:"request_paths"`
 }
@@ -38,7 +38,8 @@ type WebSocketConfig struct {
 }
 
 type RequestPathsConfig struct {
-	Kline string `yaml:"kline"`
+	Kline         string `yaml:"kline"`
+	WalletBalance string `yaml:"wallet_balance"`
 }
 
 type MarketConstantsConfig struct {
@@ -52,6 +53,7 @@ type TraderConfig struct {
 	RSISellValue          float64 `yaml:"rsi_sell_value"`
 	MedianVolumeThreshold float64 `yaml:"median_volume_threshold"`
 	SellCheckInterval     int     `yaml:"sell_check_interval"`
+	BalanceToLeave        float64 `yaml:"balance_to_leave"`
 }
 
 type Defaults struct {
