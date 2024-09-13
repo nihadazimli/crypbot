@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api/bybit"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/financial"
@@ -34,48 +33,19 @@ func main() {
 	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
-	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.MAINNET))
+
+	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.TESTNET))
 	bybitAdapter := &bybit.BybitAdapter{HTTPClient: bybitClient}
 
-	fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
-	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go websocket.Serve(cfg, klineReceived)
 
+	fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
 	go fe.ProcessKline()
 	go fe.ProcessRSI()
-	//go fe.Show()
+	go fe.Show()
 
-	balance, err := bybitAdapter.GetAccountBalance(ctx)
-	if err != nil {
-		log.Printf("Cannot get balance. err: %v\n", err)
-	}
-	fmt.Println(balance)
-	//limitPrice := 54100.10
-	//stopLimit := 54000.4
-	symbol := "BTCUSDT"
-	//buyParams := broker_api.BuyOrderRequestParams{
-	//	Symbol:      symbol,
-	//	LimitPrice:  limitPrice,
-	//	OrderAmount: (balance.Total - 0.3) / limitPrice,
-	//	StopLimit:   stopLimit,
-	//}
-	//buyParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
-	//if err != nil {
-	//	log.Printf("Cannot get order details. err: %v\n", err)
-	//}
-	//fmt.Println(buyParams)
-	sellParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
-	if err != nil {
-		log.Printf("Cannot get order details. err: %v\n", err)
-	}
-	order, err := bybitAdapter.PlaceSellOrder(ctx, sellParams)
-
-	if err != nil {
-		log.Printf("Cannot place buy order %v\n", err)
-	}
-
-	log.Println(order)
-	//go tc.ProcessBuySignal(ctx)
+	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
+	go tc.ProcessBuySignal(ctx)
 
 	<-ctx.Done() // Block until context is cancelled
 }
