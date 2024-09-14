@@ -182,6 +182,7 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
 		"price":     strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
 	}
+	fmt.Println(requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -205,8 +206,8 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 		return broker_api.SellOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
-	var buyDetails broker_api.BuyOrderResultDetails
-	err = json.Unmarshal(resultData, &buyDetails)
+	var sellDetails broker_api.SellOrderResultDetails
+	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
 		return broker_api.SellOrderResult{}, fmt.Errorf("error unmarshalling result to BuyOrderResultDetails: %s", err)
 	}
@@ -214,8 +215,8 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 	return broker_api.SellOrderResult{
 		Success: true,
 		Details: broker_api.SellOrderResultDetails{
-			OrderId:     buyDetails.OrderId,
-			OrderLinkId: buyDetails.OrderLinkId,
+			OrderId:     sellDetails.OrderId,
+			OrderLinkId: sellDetails.OrderLinkId,
 		},
 	}, nil
 }
@@ -224,7 +225,7 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
-		"orderId":  params.OrderId,
+		"orderId":  strconv.Itoa(params.OrderId),
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
 
@@ -248,7 +249,6 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 	if err != nil {
 		return broker_api.CancelOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
-
 	var cancelOrderDetails broker_api.CancelOrderResult
 	err = json.Unmarshal(resultData, &cancelOrderDetails)
 

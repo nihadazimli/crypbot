@@ -72,5 +72,5 @@ type CancelOrderRequestParams struct {
 }
 
 type CancelOrderResult struct {
-	OrderId int
+	OrderId string
 }
