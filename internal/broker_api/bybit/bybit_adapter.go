@@ -206,8 +206,8 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 		return broker_api.SellOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
-	var buyDetails broker_api.BuyOrderResultDetails
-	err = json.Unmarshal(resultData, &buyDetails)
+	var sellDetails broker_api.SellOrderResultDetails
+	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
 		return broker_api.SellOrderResult{}, fmt.Errorf("error unmarshalling result to BuyOrderResultDetails: %s", err)
 	}
@@ -215,8 +215,43 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 	return broker_api.SellOrderResult{
 		Success: true,
 		Details: broker_api.SellOrderResultDetails{
-			OrderId:     buyDetails.OrderId,
-			OrderLinkId: buyDetails.OrderLinkId,
+			OrderId:     sellDetails.OrderId,
+			OrderLinkId: sellDetails.OrderLinkId,
 		},
 	}, nil
+}
+
+func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
+	requestParams := map[string]interface{}{
+		"category": "spot",
+		"symbol":   params.Symbol,
+		"orderId":  strconv.Itoa(params.OrderId),
+	}
+	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
+
+	if err != nil {
+		return broker_api.CancelOrderResult{}, err
+	}
+
+	// Check if the response indicates success
+	if response.RetCode != 0 {
+		responseJSON, jsonErr := json.Marshal(response)
+		if jsonErr != nil {
+			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+		} else {
+			fmt.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
+		}
+		return broker_api.CancelOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+	}
+
+	resultData, err := json.Marshal(response.Result)
+
+	if err != nil {
+		return broker_api.CancelOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+	}
+	var cancelOrderDetails broker_api.CancelOrderResult
+	err = json.Unmarshal(resultData, &cancelOrderDetails)
+
+	return broker_api.CancelOrderResult{OrderId: cancelOrderDetails.OrderId}, nil
+
 }

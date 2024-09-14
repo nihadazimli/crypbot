@@ -9,6 +9,7 @@ type BrokerAPI interface {
 	PlaceSellOrder(ctx context.Context, params SellOrderRequestParams) (SellOrderResult, error)
 	GetOrderBook(ctx context.Context, params OrderBookRequestParams) (OrderBookResult, error)
 	GetAccountBalance(ctx context.Context) (AccountBalanceResult, error)
+	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
 }
 
 type BuyOrderResult struct {
@@ -63,4 +64,13 @@ type OrderBookResult struct {
 type OrderBookDetail struct {
 	Price    float64
 	Quantity float64
+}
+
+type CancelOrderRequestParams struct {
+	Symbol  string
+	OrderId int
+}
+
+type CancelOrderResult struct {
+	OrderId string
 }
