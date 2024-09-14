@@ -182,7 +182,6 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
 		"price":     strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
 	}
-	fmt.Println(requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -219,4 +218,40 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 			OrderLinkId: buyDetails.OrderLinkId,
 		},
 	}, nil
+}
+
+func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
+	requestParams := map[string]interface{}{
+		"category": "spot",
+		"symbol":   params.Symbol,
+		"orderId":  params.OrderId,
+	}
+	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
+
+	if err != nil {
+		return broker_api.CancelOrderResult{}, err
+	}
+
+	// Check if the response indicates success
+	if response.RetCode != 0 {
+		responseJSON, jsonErr := json.Marshal(response)
+		if jsonErr != nil {
+			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+		} else {
+			fmt.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
+		}
+		return broker_api.CancelOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+	}
+
+	resultData, err := json.Marshal(response.Result)
+
+	if err != nil {
+		return broker_api.CancelOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+	}
+
+	var cancelOrderDetails broker_api.CancelOrderResult
+	err = json.Unmarshal(resultData, &cancelOrderDetails)
+
+	return broker_api.CancelOrderResult{OrderId: cancelOrderDetails.OrderId}, nil
+
 }
