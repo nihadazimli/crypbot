@@ -255,3 +255,47 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 	return broker_api.CancelOrderResult{OrderId: cancelOrderDetails.OrderId}, nil
 
 }
+
+func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
+	requestParams := make(map[string]interface{})
+	requestParams["symbol"] = params.Symbol
+	requestParams["orderId"] = params.OrderID
+
+	if params.Price != nil {
+		requestParams["price"] = *params.Price
+	}
+	if params.Quantity != nil {
+		requestParams["qty"] = *params.Quantity
+	}
+	if params.StopLoss != nil {
+		requestParams["stopLoss"] = *params.StopLoss
+	}
+
+	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
+
+	if err != nil {
+		return broker_api.AmendOrderResult{}, err
+	}
+
+	if response.RetCode != 0 {
+		responseJSON, jsonErr := json.Marshal(response)
+		if jsonErr != nil {
+			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+		} else {
+			fmt.Printf("Error: Amend Order\nFull response: %s", string(responseJSON))
+		}
+		return broker_api.AmendOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+	}
+
+	resultData, err := json.Marshal(response.Result)
+	if err != nil {
+		return broker_api.AmendOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+	}
+
+	var details broker_api.AmendOrderResult
+	err = json.Unmarshal(resultData, &details)
+	if err != nil {
+		return broker_api.AmendOrderResult{}, fmt.Errorf("error unmarshalling result to AmendOrderResultDetails: %s", err)
+	}
+	return details, nil
+}
