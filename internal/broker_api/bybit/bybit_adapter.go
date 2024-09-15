@@ -258,17 +258,20 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 
 func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
 	requestParams := make(map[string]interface{})
+	requestParams["category"] = "spot"
 	requestParams["symbol"] = params.Symbol
-	requestParams["orderId"] = params.OrderID
+	requestParams["orderId"] = params.OrderId
 
 	if params.Price != nil {
-		requestParams["price"] = *params.Price
+		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', 2, 64) // 2 decimal places
 	}
+
 	if params.Quantity != nil {
-		requestParams["qty"] = *params.Quantity
+		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', 6, 64) // 6 decimal places
 	}
+
 	if params.StopLoss != nil {
-		requestParams["stopLoss"] = *params.StopLoss
+		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', 2, 64) // 2 decimal places
 	}
 
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
