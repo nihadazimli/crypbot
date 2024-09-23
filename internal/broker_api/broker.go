@@ -98,4 +98,5 @@ const (
 	PartiallyFilled
 	Canceled
 	Failed
+	NotFound
 )
