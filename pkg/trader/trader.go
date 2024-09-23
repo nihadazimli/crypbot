@@ -76,26 +76,28 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 				log.Printf("Encountered error while checking order status. Err: %s", err)
 				continue
 			}
-			if orderStatus == broker_api.Filled {
+			if orderStatus == broker_api.NotFound {
+				log.Printf("Order not found for symbol %s. OrderId: %s", symbol, order.Details.OrderId)
+				return
+			} else if orderStatus == broker_api.Filled {
 				log.Printf("Order filled for %s", symbol)
 				tc.sellReady <- symbol
 				return
-			}
-
-			if orderStatus == broker_api.PartiallyFilled {
+			} else if orderStatus == broker_api.PartiallyFilled {
 				continue // Let's give chance for order to be fully filled for now
 				// TODO: create new logic for Partially filled orders
 			}
 
-			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+			// For the rest of the states we need to create buy order
+			orderParams, err = tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
-				log.Printf("Buy details cant calculated. Err: %s", err)
+				log.Printf("Buy details can't be calculated. Err: %s", err)
 			}
 			params := broker_api.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,
 				Price:    &orderParams.LimitPrice,
-				Quantity: &orderParams.OrderAmount,
+				Quantity: &orderParams.OrderAmount, //TODO: account balance should be from the time before order is placed
 				StopLoss: &orderParams.StopLimit,
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)

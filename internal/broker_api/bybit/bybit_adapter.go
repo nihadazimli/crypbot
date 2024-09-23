@@ -305,5 +305,5 @@ func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendO
 
 func (ba *BybitAdapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
 	//TODO implement me
-	panic("implement me")
+	return broker_api.Pending, nil
 }
