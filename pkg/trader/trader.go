@@ -48,26 +48,77 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 				log.Printf("Error calculating buy order details: %v", err)
 				continue
 			}
-			success := tc.placeBuyOrder(ctx, orderParams)
-			if success {
-				tc.sellReady <- symbol
+			order, err := tc.placeBuyOrder(ctx, orderParams)
+
+			if err != nil {
+				log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
+				continue
 			}
+
+			tc.monitorBuyOrder(ctx, symbol, order.Details.OrderId)
+
 		}
 	}
 }
 
-func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) bool {
+func (tc *Trader) monitorBuyOrder(ctx context.Context, symbol string, orderId string) {
+	ticker := time.NewTicker(tc.getBuyCheckIntervalDuration())
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Context cancelled while monitoring buy order. Symbol: %s", symbol)
+		case <-ticker.C:
+			orderStatus, err := tc.broker.GetOrderStatus(ctx, orderId)
+			if err != nil {
+				log.Printf("Encountered error while checking order status. Err: %s", err)
+			}
+
+			switch orderStatus {
+			case broker_api.Filled:
+				tc.sellReady <- symbol
+				return
+			case broker_api.Canceled:
+				tc.buyReady <- symbol
+				return
+			case broker_api.Pending:
+				orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+				if err != nil {
+					log.Printf("Buy details cant calculated. Err: %s", err)
+				}
+				params := broker_api.AmendOrderRequestParams{
+					Symbol:   symbol,
+					OrderId:  orderId,
+					Price:    &orderParams.LimitPrice,
+					Quantity: &orderParams.OrderAmount,
+					StopLoss: &orderParams.StopLimit,
+				}
+				order, err := tc.broker.AmendOrder(ctx, params)
+				if err != nil {
+
+				}
+
+			case broker_api.PartiallyFilled:
+				continue
+			default:
+				continue
+			}
+
+		}
+	}
+}
+
+func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
 	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
 	if err != nil {
-		log.Println("Failed to place buy order:", err)
-		return false
+		return orderResult, err
 	}
 	fmt.Println("Buy order placed successfully:", orderResult.Details.OrderId)
 	tc.positions[orderParams.Symbol] = orderResult.Details.OrderAmount
-	return true
+	return orderResult, nil
 }
 
 func (tc *Trader) ProcessSellSignal(ctx context.Context) {
@@ -236,6 +287,10 @@ func (tc *Trader) CalculateBuyOrderDetails(ctx context.Context, symbol string) (
 
 func (tc *Trader) getAPITimeoutDuration() time.Duration {
 	return time.Duration(tc.cfg.Broker.API.Timeout) * time.Second
+}
+
+func (tc *Trader) getBuyCheckIntervalDuration() time.Duration {
+	return time.Duration(tc.cfg.Trader.BuyCheckInterval) * time.Second
 }
 
 func (tc *Trader) getSellCheckIntervalDuration() time.Duration {

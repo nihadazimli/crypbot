@@ -302,3 +302,8 @@ func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendO
 	}
 	return details, nil
 }
+
+func (ba *BybitAdapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
+	//TODO implement me
+	panic("implement me")
+}
