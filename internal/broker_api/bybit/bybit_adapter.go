@@ -19,6 +19,7 @@ type BybitAdapter struct {
 type WalletResult struct {
 	List []struct {
 		TotalAvailableBalance string `json:"totalAvailableBalance"`
+		TotalWalletBalance    string `json:"totalWalletBalance"`
 	} `json:"list"`
 }
 
@@ -39,7 +40,6 @@ func NewBybitAdapter() *BybitAdapter {
 		cfg:        cfg,
 	}
 }
-
 func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
 
 	requestParams := map[string]interface{}{
@@ -63,7 +63,7 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.Accou
 	if len(walletResult.List) == 0 {
 		return broker_api.AccountBalanceResult{}, errors.New("wallet result list is empty")
 	}
-	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalAvailableBalance, 64)
+	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
 
 	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }

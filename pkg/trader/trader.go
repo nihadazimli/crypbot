@@ -56,6 +56,8 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	if err != nil {
 		log.Printf("Error calculating buy order details: %v", err)
 	}
+	orderParams.LimitPrice = orderParams.StopLimit + 1
+
 	order, err := tc.placeBuyOrder(ctx, orderParams)
 
 	tc.activeOrders[orderParams.Symbol] = order.Details.OrderAmount
@@ -233,23 +235,9 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
 	}
 	orderAmount := tc.activeOrders[symbol]
+	//TODO: When orderAmount is zero check through Broker as well. Or generate a logic to construct it.
 	return broker_api.SellOrderRequestParams{Symbol: symbol, OrderAmount: orderAmount, LimitPrice: limitPrice}, err
 
-	//1. Get best ask price
-	//2. Get the current price (closedPrice in kline)
-	//3. Get coin balance that we are currently holding
-	//4. If best ask <= current price, then place an order such that:
-	//⁃ limit price = best ask
-	//⁃ order amount = coin balance
-	//5. If best bid < closed price, then place an order such that:
-	//⁃ Limit price = (best ask + current price)/2
-	//	⁃ Round UP limit price to the same precision as best bid
-	//⁃ Order amount = coin balance
-	//6. Check if the order is filled at the next candle close.
-	//⁃ i.e. if RSI > 40 at 00:15, check if the order is filled at 00:30.
-	//7. If yes, done
-	//8. If no, repeat the steps 1 to 6.
-	//9. If again not filled, place a market order with order size = coin balance
 }
 
 func (tc *Trader) CalculateBuyOrderDetails(ctx context.Context, symbol string) (broker_api.BuyOrderRequestParams, error) {
