@@ -20,7 +20,7 @@ type WebSocketClient struct {
 }
 
 func Serve(cfg *config.Config, klineReceived chan model.WSInternalKline) {
-	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.Address, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(cfg.Broker.WebSocket.AddressPublic, nil)
 
 	if err != nil {
 		log.Fatal("Failed to dial:", err)

@@ -186,7 +186,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, orderParams broker_api.S
 
 func (tc *Trader) buyConditionsMet(symbol string) bool {
 
-	rsiClosed, rsiOk := tc.financial.GetRSIClosed(symbol)
+	rsiClosed, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
 		log.Printf("No RSI data available for %s", symbol)
 		return false

@@ -34,7 +34,9 @@ type APIConfig struct {
 }
 
 type WebSocketConfig struct {
-	Address string `yaml:"address"`
+	AddressPublic  string `yaml:"address_public"`
+	AddressPrivate string `yaml:"address_private"`
+	PingInterval   int    `yaml:"ping_interval"`
 }
 
 type RequestPathsConfig struct {
