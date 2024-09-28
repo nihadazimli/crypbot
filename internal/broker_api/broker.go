@@ -2,6 +2,7 @@ package broker_api
 
 import (
 	"context"
+	"github.com/nihadazimli/crypbot/pkg/model"
 )
 
 type BrokerAPI interface {
@@ -12,6 +13,7 @@ type BrokerAPI interface {
 	AmendOrder(ctx context.Context, params AmendOrderRequestParams) (AmendOrderResult, error)
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
 	GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error)
+	StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error
 }
 
 type BuyOrderResult struct {

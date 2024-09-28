@@ -1,8 +1,10 @@
 package financial
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/pkg/model"
 	"io"
@@ -33,6 +35,7 @@ type EngineInterface interface {
 type Engine struct {
 	httpClient          *http.Client
 	cfg                 *config.Config
+	broker              broker_api.BrokerAPI
 	closedKlineReceived chan string
 	buyReady            chan string
 	klineReceived       chan model.WSInternalKline
@@ -40,7 +43,7 @@ type Engine struct {
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
-func NewFinancialEngine(cfg *config.Config, klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
+func NewFinancialEngine(cfg *config.Config, broker broker_api.BrokerAPI, klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
 	return &Engine{
 		httpClient:          &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
 		cfg:                 cfg,
@@ -48,14 +51,20 @@ func NewFinancialEngine(cfg *config.Config, klineReceived chan model.WSInternalK
 		klineReceived:       klineReceived,
 		closedKlineReceived: closedKlineReceived,
 		buyReady:            buyReady,
+		broker:              broker,
 	}
 }
 
-func Start(klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, timeout int) *Engine {
+func Start(ctx context.Context, broker broker_api.BrokerAPI, closedKlineReceived chan string, buyReady chan string, timeout int) *Engine {
 	cfg := config.GetConfig()
-	fe := NewFinancialEngine(cfg, klineReceived, closedKlineReceived, buyReady, timeout)
-	fe.loadRecentKlineData()
+	klineReceived := make(chan model.WSInternalKline)
 
+	fe := NewFinancialEngine(cfg, broker, klineReceived, closedKlineReceived, buyReady, timeout)
+	fe.loadRecentKlineData()
+	err := fe.broker.StartKlineStream(ctx, cfg.KlineTopics, klineReceived)
+	if err != nil {
+		log.Printf("Cannot start KlineStream. Err: %v", err)
+	}
 	return fe
 }
 

@@ -34,9 +34,10 @@ type APIConfig struct {
 }
 
 type WebSocketConfig struct {
-	AddressPublic  string `yaml:"address_public"`
-	AddressPrivate string `yaml:"address_private"`
-	PingInterval   int    `yaml:"ping_interval"`
+	AddressPublic   string `yaml:"address_public"`
+	AddressPrivate  string `yaml:"address_private"`
+	PingInterval    int    `yaml:"ping_interval"`
+	MonitorInterval int    `yaml:"monitor_interval"`
 }
 
 type RequestPathsConfig struct {
@@ -101,6 +102,7 @@ func loadFromYaml() (*Config, error) {
 	return &config, nil
 }
 
+// TODO: Move kline topic generator functions inside of bybit adapter
 func createKlineTopics(klineInterval int, symbol string) string {
 	return "kline." + strconv.Itoa(klineInterval) + "." + symbol
 }

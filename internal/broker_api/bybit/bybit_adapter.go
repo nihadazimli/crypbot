@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
+	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/pkg/websocket"
 	bybit "github.com/wuhewuhe/bybit.go.api"
+	"log"
 	"strconv"
+	"strings"
 )
-
-type BybitAdapter struct {
-	HTTPClient *bybit.Client
-	cfg        *config.Config
-}
 
 type WalletResult struct {
 	List []struct {
@@ -33,14 +32,24 @@ type OrderBookResponse struct {
 	UpdateID  int64            `json:"u"`
 }
 
-func NewBybitAdapter() *BybitAdapter {
+type Adapter struct {
+	HTTPClient     *bybit.Client
+	cfg            *config.Config
+	orderStatus    map[string]broker_api.OrderStatus
+	klineWriteChan chan model.WSInternalKline
+}
+
+func NewBybitAdapter() *Adapter {
 	cfg := config.GetConfig()
-	return &BybitAdapter{
+	ba := &Adapter{
 		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
 		cfg:        cfg,
 	}
+	ba.startOrderStream(context.Background())
+	return ba
 }
-func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
+
+func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
 
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
@@ -68,7 +77,7 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.Accou
 	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
 
-func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
@@ -79,7 +88,6 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', 2, 64),
 		"slOrderType": "Market",
 	}
-	fmt.Println(requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -118,7 +126,7 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 	}, nil
 }
 
-func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
+func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
 	requestParams := map[string]interface{}{
 		"symbol":   params.Symbol,
 		"limit":    params.Limit,
@@ -173,7 +181,7 @@ func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.Orde
 	}, nil
 }
 
-func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
+func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
@@ -221,7 +229,7 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 	}, nil
 }
 
-func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
+func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
@@ -256,7 +264,7 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 
 }
 
-func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
+func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
 	requestParams := make(map[string]interface{})
 	requestParams["category"] = "spot"
 	requestParams["symbol"] = params.Symbol
@@ -303,7 +311,59 @@ func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendO
 	return details, nil
 }
 
-func (ba *BybitAdapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
 	//TODO implement me
 	return broker_api.Pending, nil
+}
+
+func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
+	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
+	ba.klineWriteChan = klineWriteChan
+
+	err := ws.ConnectAndStart(symbols)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ba *Adapter) handleKlineMessages(message []byte) error {
+	var WSKline model.WSRawKline
+	err := json.Unmarshal(message, &WSKline)
+	if err != nil {
+		log.Println("Failed to unmarshal JSON:", err)
+		return err
+	}
+
+	for _, kline := range WSKline.Data {
+		internalKline := model.WSInternalKline{
+			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
+			Close:   kline.Close,
+			Confirm: kline.Confirm,
+			Volume:  kline.Volume,
+		}
+		ba.klineWriteChan <- internalKline
+
+	}
+	return nil
+}
+
+func getSymbolFromKlineTopic(topic string) string {
+	return topic[strings.LastIndex(topic, ".")+1:]
+}
+
+func (ba *Adapter) startOrderStream(ctx context.Context) error {
+	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
+		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handleOrderMessages)
+	err := ws.ConnectAndStart([]string{"order"})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ba *Adapter) handleOrderMessages(message []byte) error {
+	fmt.Printf("Received Order Stream Message: %s", string(message))
+	return nil
 }
