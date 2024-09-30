@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/internal/model"
 	"log"
 	"time"
 

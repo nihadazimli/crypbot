@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/internal/model"
 	"io"
 	"log"
 	"net/http"

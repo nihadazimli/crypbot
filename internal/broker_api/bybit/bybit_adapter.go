@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
-	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/pkg/websocket"
 	bybit "github.com/wuhewuhe/bybit.go.api"
 	"log"

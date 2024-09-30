@@ -2,7 +2,7 @@ package broker_api
 
 import (
 	"context"
-	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/internal/model"
 )
 
 type BrokerAPI interface {
