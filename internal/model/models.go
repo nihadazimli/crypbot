@@ -25,6 +25,7 @@ type BybitWSOrderData struct {
 	AvgPrice    string `json:"avgPrice"`
 	OrderStatus string `json:"orderStatus"`
 	Symbol      string `json:"symbol"`
+	LeavesQty   string `json:"leavesQty"`
 }
 
 type WSKlineData struct {

@@ -35,7 +35,7 @@ type OrderBookResponse struct {
 type Adapter struct {
 	HTTPClient     *bybit.Client
 	cfg            *config.Config
-	orderStatus    map[string]broker_api.OrderStatus
+	activeOrders   map[string]broker_api.ActiveOrderTracker
 	klineWriteChan chan model.WSInternalKline
 	precisionPrice map[string]int
 	precisionQty   map[string]int
@@ -47,7 +47,7 @@ func NewBybitAdapter() *Adapter {
 		HTTPClient:     bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
 		cfg:            cfg,
 		precisionPrice: make(map[string]int),
-		orderStatus:    make(map[string]broker_api.OrderStatus),
+		activeOrders:   make(map[string]broker_api.ActiveOrderTracker),
 		precisionQty:   make(map[string]int),
 	}
 	err := ba.startOrderStream(context.Background())
@@ -324,8 +324,8 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 }
 
 func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_api.OrderStatus {
-	if orderStatus, exists := ba.orderStatus[orderId]; exists {
-		return orderStatus
+	if order, exists := ba.activeOrders[orderId]; exists {
+		return order.Status
 	}
 	return broker_api.NotFound
 }
@@ -389,8 +389,7 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 	case "order":
 		return ba.handleOrderData(privateMessage.Data)
 	default:
-		return nil
-		//return fmt.Errorf("unhandled topic: %s,Data:%s", privateMessage.Topic, string(privateMessage.Data))
+		return fmt.Errorf("unhandled topic: %s,Data:%s", privateMessage.Topic, string(privateMessage.Data))
 	}
 
 }
@@ -438,13 +437,27 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	}
 
 	for _, order := range orders {
+		var orderState broker_api.ActiveOrderTracker
 		if order.OrderStatus == "Filled" {
-			ba.orderStatus[order.OrderID] = broker_api.Filled
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Filled}
 		} else if order.OrderStatus == "New" {
-			ba.orderStatus[order.OrderID] = broker_api.Pending
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Pending}
 		} else if order.OrderStatus == "PartiallyFilled" {
-			ba.orderStatus[order.OrderID] = broker_api.PartiallyFilled
+			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
+			if err != nil {
+				return err
+			}
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.PartiallyFilled, RemainingQty: remainingQty}
 		}
+		ba.activeOrders[order.OrderID] = orderState
+
 	}
 	return nil
+}
+
+func (ba *Adapter) GetRemainingQty(orderId string) (float64, bool) {
+	if order, exists := ba.activeOrders[orderId]; exists {
+		return order.RemainingQty, true
+	}
+	return 0.0, false
 }

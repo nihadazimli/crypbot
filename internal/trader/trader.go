@@ -52,12 +52,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		return
 	}
 
-	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
-	if err != nil {
-		log.Printf("Error calculating buy order details: %v", err)
-	}
-	orderParams.LimitPrice = orderParams.StopLimit * 1.01
-	order, err := tc.placeBuyOrder(ctx, orderParams)
+	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
 		log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
@@ -81,12 +76,38 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 				tc.sellReady <- symbol
 				return
 			} else if orderStatus == broker_api.PartiallyFilled {
+				orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+				if err != nil {
+					log.Printf("Buy details can't be calculated for partial order. Err: %s\n", err)
+					continue
+				}
+				remainingQty, ok := tc.broker.GetRemainingQty(order.Details.OrderId)
+				if !ok {
+					log.Printf("Cant get Remaining qty for order %s\n", order.Details.OrderId)
+					continue
+				}
+				orderParams.OrderAmount = remainingQty
+				params := broker_api.AmendOrderRequestParams{
+					Symbol:   symbol,
+					OrderId:  order.Details.OrderId,
+					Price:    &orderParams.LimitPrice,
+					Quantity: &orderParams.OrderAmount,
+					StopLoss: &orderParams.StopLimit,
+				}
+				order, err := tc.broker.AmendOrder(ctx, params)
+				if err != nil {
+					log.Printf("Cannot Amend Partial Order. Err: %s", err)
+					continue
+				}
+
+				log.Printf("Order Id %s is amended successfully for partial order", order.OrderId)
+
 				continue // Let's give chance for order to be fully filled for now
 				// TODO: create new logic for Partially filled orders
 			}
 
 			// For the rest of the states we need to create buy order
-			orderParams, err = tc.CalculateBuyOrderDetails(ctx, symbol)
+			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
 				log.Printf("Buy details can't be calculated. Err: %s", err)
 			}
@@ -120,9 +141,16 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	}
 }
 
-func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (tc *Trader) placeFastBuyOrder(ctx context.Context, symbol string) (broker_api.BuyOrderResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
+
+	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+	if err != nil {
+		log.Printf("Error calculating buy order details: %v", err)
+	}
+	// REMOVE: only for debugging
+	orderParams.LimitPrice = orderParams.StopLimit * 1.01
 
 	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
 	if err != nil {
@@ -238,7 +266,7 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 		averagePrice := (bestAskPrice + currentPrice) / 2
 		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
 	}
-	orderAmount := 4.311
+	orderAmount := 0.0
 	//TODO: When orderAmount is zero check through Broker as well. Or generate a logic to construct it.
 	return broker_api.SellOrderRequestParams{Symbol: symbol, OrderAmount: orderAmount, LimitPrice: limitPrice}, err
 

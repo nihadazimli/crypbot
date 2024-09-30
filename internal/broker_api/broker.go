@@ -14,6 +14,7 @@ type BrokerAPI interface {
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
 	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
 	StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error
+	GetRemainingQty(orderId string) (float64, bool)
 }
 
 type BuyOrderResult struct {
@@ -102,3 +103,8 @@ const (
 	Failed
 	NotFound
 )
+
+type ActiveOrderTracker struct {
+	Status       OrderStatus
+	RemainingQty float64
+}
