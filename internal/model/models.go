@@ -1,10 +1,30 @@
 package model
 
+import (
+	"encoding/json"
+)
+
 type WSRawKline struct {
 	Data  []WSKlineData `json:"data"`
 	Topic string        `json:"topic"`
 	Ts    int64         `json:"ts"`
 	Type  string        `json:"type"`
+}
+
+type BybitWSPrivateMessage struct {
+	Id           string          `json:"id"`
+	Topic        string          `json:"topic"`
+	CreationTime int             `json:"creationTime"`
+	Data         json.RawMessage `json:"data"`
+}
+
+type BybitWSOrderData struct {
+	OrderID     string `json:"orderId"`
+	Qty         string `json:"qty"`
+	CumExecQty  string `json:"cumExecQty"`
+	AvgPrice    string `json:"avgPrice"`
+	OrderStatus string `json:"orderStatus"`
+	Symbol      string `json:"symbol"`
 }
 
 type WSKlineData struct {

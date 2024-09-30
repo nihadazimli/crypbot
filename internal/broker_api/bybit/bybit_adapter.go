@@ -47,6 +47,7 @@ func NewBybitAdapter() *Adapter {
 		HTTPClient:     bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
 		cfg:            cfg,
 		precisionPrice: make(map[string]int),
+		orderStatus:    make(map[string]broker_api.OrderStatus),
 		precisionQty:   make(map[string]int),
 	}
 	err := ba.startOrderStream(context.Background())
@@ -244,7 +245,7 @@ func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrde
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
-		"orderId":  strconv.Itoa(params.OrderId),
+		"orderId":  params.OrderId,
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
 
@@ -322,9 +323,11 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 	return details, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
-	//TODO implement me
-	return broker_api.Pending, nil
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_api.OrderStatus {
+	if orderStatus, exists := ba.orderStatus[orderId]; exists {
+		return orderStatus
+	}
+	return broker_api.NotFound
 }
 
 func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
@@ -366,7 +369,7 @@ func getSymbolFromKlineTopic(topic string) string {
 
 func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
-		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handleOrderMessages)
+		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handlePrivateWSMessages)
 	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
 	if err != nil {
 		return err
@@ -374,9 +377,22 @@ func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	return nil
 }
 
-func (ba *Adapter) handleOrderMessages(message []byte) error {
+func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 	fmt.Printf("Received Private Stream Message: %s\n", string(message))
-	return nil
+	var privateMessage model.BybitWSPrivateMessage
+	err := json.Unmarshal(message, &privateMessage)
+	if err != nil {
+		return err
+	}
+
+	switch privateMessage.Topic {
+	case "order":
+		return ba.handleOrderData(privateMessage.Data)
+	default:
+		return nil
+		//return fmt.Errorf("unhandled topic: %s,Data:%s", privateMessage.Topic, string(privateMessage.Data))
+	}
+
 }
 
 func (ba *Adapter) setQtyPrecision(symbol string, precision int) {
@@ -412,4 +428,23 @@ func (ba *Adapter) setupPrecisionDetails(symbols []string) error {
 
 func (ba *Adapter) getPrecisionInfo(symbol string) (int, int) {
 	return 4, 3
+}
+
+func (ba *Adapter) handleOrderData(data json.RawMessage) error {
+	var orders []model.BybitWSOrderData
+	err := json.Unmarshal(data, &orders)
+	if err != nil {
+		return err
+	}
+
+	for _, order := range orders {
+		if order.OrderStatus == "Filled" {
+			ba.orderStatus[order.OrderID] = broker_api.Filled
+		} else if order.OrderStatus == "New" {
+			ba.orderStatus[order.OrderID] = broker_api.Pending
+		} else if order.OrderStatus == "PartiallyFilled" {
+			ba.orderStatus[order.OrderID] = broker_api.PartiallyFilled
+		}
+	}
+	return nil
 }

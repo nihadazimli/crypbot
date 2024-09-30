@@ -86,15 +86,21 @@ func (fe *Engine) GetRSIClosed(symbol string) (float64, bool) {
 }
 
 func (fe *Engine) GetRSILive(symbol string) (float64, bool) {
-	if metrics, exists := fe.Coins[symbol]; exists {
-		return metrics.RSILive, true
+	if metrics, exists := fe.Coins[symbol]; exists && metrics != nil {
+		if metrics.RSILive != 0 {
+			return metrics.RSILive, true
+		}
+		return fe.getDefaultMissingDataValue(), false
 	}
 	return fe.getDefaultMissingDataValue(), false
 }
 
 func (fe *Engine) GetVolumeValueMedian(symbol string) (float64, bool) {
-	if metrics, exists := fe.Coins[symbol]; exists {
-		return metrics.VolumeValueMedian, true
+	if metrics, exists := fe.Coins[symbol]; exists && metrics != nil {
+		if metrics.VolumeValueMedian != 0 {
+			return metrics.VolumeValueMedian, true
+		}
+		return fe.getDefaultMissingDataValue(), false
 	}
 	return fe.getDefaultMissingDataValue(), false
 }

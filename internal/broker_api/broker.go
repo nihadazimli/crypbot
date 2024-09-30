@@ -12,7 +12,7 @@ type BrokerAPI interface {
 	GetAccountBalance(ctx context.Context) (AccountBalanceResult, error)
 	AmendOrder(ctx context.Context, params AmendOrderRequestParams) (AmendOrderResult, error)
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
-	GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error)
+	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
 	StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error
 }
 
@@ -72,7 +72,7 @@ type OrderBookDetail struct {
 
 type CancelOrderRequestParams struct {
 	Symbol  string
-	OrderId int
+	OrderId string
 }
 
 type CancelOrderResult struct {
