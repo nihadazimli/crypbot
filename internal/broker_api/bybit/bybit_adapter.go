@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/config"
+	"github.com/nihadazimli/crypbot/pkg/model"
+	"github.com/nihadazimli/crypbot/pkg/websocket"
 	bybit "github.com/wuhewuhe/bybit.go.api"
+	"log"
 	"strconv"
+	"strings"
 )
-
-type BybitAdapter struct {
-	HTTPClient *bybit.Client
-	cfg        *config.Config
-}
 
 type WalletResult struct {
 	List []struct {
 		TotalAvailableBalance string `json:"totalAvailableBalance"`
+		TotalWalletBalance    string `json:"totalWalletBalance"`
 	} `json:"list"`
 }
 
@@ -32,15 +32,34 @@ type OrderBookResponse struct {
 	UpdateID  int64            `json:"u"`
 }
 
-func NewBybitAdapter() *BybitAdapter {
-	cfg := config.GetConfig()
-	return &BybitAdapter{
-		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
-		cfg:        cfg,
-	}
+type Adapter struct {
+	HTTPClient     *bybit.Client
+	cfg            *config.Config
+	orderStatus    map[string]broker_api.OrderStatus
+	klineWriteChan chan model.WSInternalKline
+	precisionPrice map[string]int
+	precisionQty   map[string]int
 }
 
-func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
+func NewBybitAdapter() *Adapter {
+	cfg := config.GetConfig()
+	ba := &Adapter{
+		HTTPClient:     bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
+		cfg:            cfg,
+		precisionPrice: make(map[string]int),
+		precisionQty:   make(map[string]int),
+	}
+	err := ba.startOrderStream(context.Background())
+	if err != nil {
+		log.Printf("Cannot subscribe to order stream. Err: %v\n", err)
+		return nil
+	}
+	err = ba.setupPrecisionDetails(cfg.Symbols)
+
+	return ba
+}
+
+func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
 
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
@@ -63,23 +82,22 @@ func (ba *BybitAdapter) GetAccountBalance(ctx context.Context) (broker_api.Accou
 	if len(walletResult.List) == 0 {
 		return broker_api.AccountBalanceResult{}, errors.New("wallet result list is empty")
 	}
-	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalAvailableBalance, 64)
+	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
 
 	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
 
-func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
 		"side":        "Buy",
 		"orderType":   "Limit",
-		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
-		"price":       strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
-		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', 2, 64),
+		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', ba.getQtyPrecision(params.Symbol), 64),
+		"price":       strconv.FormatFloat(params.LimitPrice, 'f', ba.getPricePrecision(params.Symbol), 64),
+		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', ba.getPricePrecision(params.Symbol), 64),
 		"slOrderType": "Market",
 	}
-	fmt.Println(requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -118,7 +136,7 @@ func (ba *BybitAdapter) PlaceBuyOrder(ctx context.Context, params broker_api.Buy
 	}, nil
 }
 
-func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
+func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
 	requestParams := map[string]interface{}{
 		"symbol":   params.Symbol,
 		"limit":    params.Limit,
@@ -173,16 +191,17 @@ func (ba *BybitAdapter) GetOrderBook(ctx context.Context, params broker_api.Orde
 	}, nil
 }
 
-func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
+func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
 		"side":      "Sell",
 		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
-		"price":     strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
+		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', ba.getQtyPrecision(params.Symbol), 64),
+		"price":     strconv.FormatFloat(params.LimitPrice, 'f', ba.getPricePrecision(params.Symbol), 64),
 	}
 	fmt.Println(requestParams)
+	fmt.Println(ba.getQtyPrecision(params.Symbol), ba.getPricePrecision(params.Symbol))
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -221,7 +240,7 @@ func (ba *BybitAdapter) PlaceSellOrder(ctx context.Context, params broker_api.Se
 	}, nil
 }
 
-func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
+func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
@@ -256,22 +275,22 @@ func (ba *BybitAdapter) CancelOrder(ctx context.Context, params broker_api.Cance
 
 }
 
-func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
+func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
 	requestParams := make(map[string]interface{})
 	requestParams["category"] = "spot"
 	requestParams["symbol"] = params.Symbol
 	requestParams["orderId"] = params.OrderId
 
 	if params.Price != nil {
-		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', 2, 64) // 2 decimal places
+		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', ba.getPricePrecision(params.Symbol), 64)
 	}
 
 	if params.Quantity != nil {
-		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', 6, 64) // 6 decimal places
+		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', ba.getQtyPrecision(params.Symbol), 64)
 	}
 
 	if params.StopLoss != nil {
-		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', 2, 64) // 2 decimal places
+		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', ba.getPricePrecision(params.Symbol), 64)
 	}
 
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
@@ -301,4 +320,96 @@ func (ba *BybitAdapter) AmendOrder(ctx context.Context, params broker_api.AmendO
 		return broker_api.AmendOrderResult{}, fmt.Errorf("error unmarshalling result to AmendOrderResultDetails: %s", err)
 	}
 	return details, nil
+}
+
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
+	//TODO implement me
+	return broker_api.Pending, nil
+}
+
+func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
+	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
+	ba.klineWriteChan = klineWriteChan
+
+	err := ws.ConnectAndStart(symbols)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ba *Adapter) handleKlineMessages(message []byte) error {
+	var WSKline model.WSRawKline
+	err := json.Unmarshal(message, &WSKline)
+	if err != nil {
+		log.Println("Failed to unmarshal JSON:", err)
+		return err
+	}
+
+	for _, kline := range WSKline.Data {
+		internalKline := model.WSInternalKline{
+			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
+			Close:   kline.Close,
+			Confirm: kline.Confirm,
+			Volume:  kline.Volume,
+		}
+		ba.klineWriteChan <- internalKline
+
+	}
+	return nil
+}
+
+func getSymbolFromKlineTopic(topic string) string {
+	return topic[strings.LastIndex(topic, ".")+1:]
+}
+
+func (ba *Adapter) startOrderStream(ctx context.Context) error {
+	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
+		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handleOrderMessages)
+	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ba *Adapter) handleOrderMessages(message []byte) error {
+	fmt.Printf("Received Private Stream Message: %s\n", string(message))
+	return nil
+}
+
+func (ba *Adapter) setQtyPrecision(symbol string, precision int) {
+	if precision > 1 {
+		ba.precisionQty[symbol] = precision
+	} else {
+		ba.precisionQty[symbol] = 4
+	}
+
+}
+
+func (ba *Adapter) setPricePrecision(symbol string, precision int) {
+	ba.precisionPrice[symbol] = precision
+}
+
+func (ba *Adapter) getQtyPrecision(symbol string) int {
+	return ba.precisionQty[symbol]
+}
+
+func (ba *Adapter) getPricePrecision(symbol string) int {
+	return ba.precisionPrice[symbol]
+}
+
+func (ba *Adapter) setupPrecisionDetails(symbols []string) error {
+	for _, symbol := range symbols {
+		price, qty := ba.getPrecisionInfo(symbol)
+		ba.setPricePrecision(symbol, price)
+		ba.setQtyPrecision(symbol, qty)
+
+	}
+	return nil
+}
+
+func (ba *Adapter) getPrecisionInfo(symbol string) (int, int) {
+	return 4, 3
 }

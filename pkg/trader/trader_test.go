@@ -212,7 +212,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 			buyReady <- tc.symbol
 			go trader.ProcessBuySignal(ctx)
 			time.Sleep(1 * time.Second)
-			assert.Equal(t, trader.positions[tc.symbol], tc.orderAmount)
+			assert.Equal(t, trader.activeOrders[tc.symbol], tc.orderAmount)
 			assert.Equal(t, len(sellReady), 1)
 		})
 
@@ -285,10 +285,10 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sellReady <- tc.symbol
-			trader.positions[tc.symbol] = tc.currentPosition
+			trader.activeOrders[tc.symbol] = tc.currentPosition
 			go trader.ProcessSellSignal(ctx)
 			time.Sleep(3 * time.Second)
-			_, exists := trader.positions[tc.symbol]
+			_, exists := trader.activeOrders[tc.symbol]
 			assert.Equal(t, tc.positionExists, exists)
 		})
 	}
