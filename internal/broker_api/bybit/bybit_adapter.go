@@ -37,15 +37,25 @@ type Adapter struct {
 	cfg            *config.Config
 	orderStatus    map[string]broker_api.OrderStatus
 	klineWriteChan chan model.WSInternalKline
+	precisionPrice map[string]int
+	precisionQty   map[string]int
 }
 
 func NewBybitAdapter() *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
-		HTTPClient: bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
-		cfg:        cfg,
+		HTTPClient:     bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
+		cfg:            cfg,
+		precisionPrice: make(map[string]int),
+		precisionQty:   make(map[string]int),
 	}
-	ba.startOrderStream(context.Background())
+	err := ba.startOrderStream(context.Background())
+	if err != nil {
+		log.Printf("Cannot subscribe to order stream. Err: %v\n", err)
+		return nil
+	}
+	err = ba.setupPrecisionDetails(cfg.Symbols)
+
 	return ba
 }
 
@@ -83,9 +93,9 @@ func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrder
 		"symbol":      params.Symbol,
 		"side":        "Buy",
 		"orderType":   "Limit",
-		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
-		"price":       strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
-		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', 2, 64),
+		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', ba.getQtyPrecision(params.Symbol), 64),
+		"price":       strconv.FormatFloat(params.LimitPrice, 'f', ba.getPricePrecision(params.Symbol), 64),
+		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', ba.getPricePrecision(params.Symbol), 64),
 		"slOrderType": "Market",
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
@@ -187,10 +197,11 @@ func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrd
 		"symbol":    params.Symbol,
 		"side":      "Sell",
 		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', 6, 64),
-		"price":     strconv.FormatFloat(params.LimitPrice, 'f', 2, 64),
+		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', ba.getQtyPrecision(params.Symbol), 64),
+		"price":     strconv.FormatFloat(params.LimitPrice, 'f', ba.getPricePrecision(params.Symbol), 64),
 	}
 	fmt.Println(requestParams)
+	fmt.Println(ba.getQtyPrecision(params.Symbol), ba.getPricePrecision(params.Symbol))
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -271,15 +282,15 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 	requestParams["orderId"] = params.OrderId
 
 	if params.Price != nil {
-		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', 2, 64) // 2 decimal places
+		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', ba.getPricePrecision(params.Symbol), 64)
 	}
 
 	if params.Quantity != nil {
-		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', 6, 64) // 6 decimal places
+		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', ba.getQtyPrecision(params.Symbol), 64)
 	}
 
 	if params.StopLoss != nil {
-		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', 2, 64) // 2 decimal places
+		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', ba.getPricePrecision(params.Symbol), 64)
 	}
 
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
@@ -356,7 +367,7 @@ func getSymbolFromKlineTopic(topic string) string {
 func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
 		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handleOrderMessages)
-	err := ws.ConnectAndStart([]string{"order"})
+	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
 	if err != nil {
 		return err
 	}
@@ -364,6 +375,41 @@ func (ba *Adapter) startOrderStream(ctx context.Context) error {
 }
 
 func (ba *Adapter) handleOrderMessages(message []byte) error {
-	fmt.Printf("Received Order Stream Message: %s", string(message))
+	fmt.Printf("Received Private Stream Message: %s\n", string(message))
 	return nil
+}
+
+func (ba *Adapter) setQtyPrecision(symbol string, precision int) {
+	if precision > 1 {
+		ba.precisionQty[symbol] = precision
+	} else {
+		ba.precisionQty[symbol] = 4
+	}
+
+}
+
+func (ba *Adapter) setPricePrecision(symbol string, precision int) {
+	ba.precisionPrice[symbol] = precision
+}
+
+func (ba *Adapter) getQtyPrecision(symbol string) int {
+	return ba.precisionQty[symbol]
+}
+
+func (ba *Adapter) getPricePrecision(symbol string) int {
+	return ba.precisionPrice[symbol]
+}
+
+func (ba *Adapter) setupPrecisionDetails(symbols []string) error {
+	for _, symbol := range symbols {
+		price, qty := ba.getPrecisionInfo(symbol)
+		ba.setPricePrecision(symbol, price)
+		ba.setQtyPrecision(symbol, qty)
+
+	}
+	return nil
+}
+
+func (ba *Adapter) getPrecisionInfo(symbol string) (int, int) {
+	return 4, 3
 }

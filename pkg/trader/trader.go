@@ -57,10 +57,8 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		log.Printf("Error calculating buy order details: %v", err)
 	}
 	orderParams.LimitPrice = orderParams.StopLimit + 1
-
 	order, err := tc.placeBuyOrder(ctx, orderParams)
 
-	tc.activeOrders[orderParams.Symbol] = order.Details.OrderAmount
 	if err != nil {
 		log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
 	}
@@ -95,11 +93,15 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			if err != nil {
 				log.Printf("Buy details can't be calculated. Err: %s", err)
 			}
+			if !tc.buyConditionsMet(symbol) {
+				log.Printf("Buy Conditions are not met! :(")
+				return
+			}
 			params := broker_api.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,
 				Price:    &orderParams.LimitPrice,
-				Quantity: &orderParams.OrderAmount, //TODO: account balance should be from the time before order is placed
+				Quantity: &orderParams.OrderAmount,
 				StopLoss: &orderParams.StopLimit,
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)
@@ -109,7 +111,6 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			}
 
 			log.Printf("Order Id %s is amended successfully", order.OrderId)
-			tc.activeOrders[symbol] = orderParams.OrderAmount
 
 		}
 	}
@@ -234,7 +235,7 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 		averagePrice := (bestAskPrice + currentPrice) / 2
 		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
 	}
-	orderAmount := tc.activeOrders[symbol]
+	orderAmount := 4.128
 	//TODO: When orderAmount is zero check through Broker as well. Or generate a logic to construct it.
 	return broker_api.SellOrderRequestParams{Symbol: symbol, OrderAmount: orderAmount, LimitPrice: limitPrice}, err
 
