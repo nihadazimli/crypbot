@@ -35,7 +35,7 @@ type OrderBookResponse struct {
 type Adapter struct {
 	HTTPClient     *bybit.Client
 	cfg            *config.Config
-	orderStatus    map[string]broker_api.OrderStatus
+	activeOrders   map[string]broker_api.ActiveOrderTracker
 	klineWriteChan chan model.WSInternalKline
 	precisionPrice map[string]int
 	precisionQty   map[string]int
@@ -47,6 +47,7 @@ func NewBybitAdapter() *Adapter {
 		HTTPClient:     bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
 		cfg:            cfg,
 		precisionPrice: make(map[string]int),
+		activeOrders:   make(map[string]broker_api.ActiveOrderTracker),
 		precisionQty:   make(map[string]int),
 	}
 	err := ba.startOrderStream(context.Background())
@@ -244,7 +245,7 @@ func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrde
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
-		"orderId":  strconv.Itoa(params.OrderId),
+		"orderId":  params.OrderId,
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
 
@@ -322,9 +323,11 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 	return details, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
-	//TODO implement me
-	return broker_api.Pending, nil
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_api.OrderStatus {
+	if order, exists := ba.activeOrders[orderId]; exists {
+		return order.Status
+	}
+	return broker_api.NotFound
 }
 
 func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
@@ -366,7 +369,7 @@ func getSymbolFromKlineTopic(topic string) string {
 
 func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
-		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handleOrderMessages)
+		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handlePrivateWSMessages)
 	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
 	if err != nil {
 		return err
@@ -374,9 +377,21 @@ func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	return nil
 }
 
-func (ba *Adapter) handleOrderMessages(message []byte) error {
+func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 	fmt.Printf("Received Private Stream Message: %s\n", string(message))
-	return nil
+	var privateMessage model.BybitWSPrivateMessage
+	err := json.Unmarshal(message, &privateMessage)
+	if err != nil {
+		return err
+	}
+
+	switch privateMessage.Topic {
+	case "order":
+		return ba.handleOrderData(privateMessage.Data)
+	default:
+		return fmt.Errorf("unhandled topic: %s,Data:%s", privateMessage.Topic, string(privateMessage.Data))
+	}
+
 }
 
 func (ba *Adapter) setQtyPrecision(symbol string, precision int) {
@@ -412,4 +427,37 @@ func (ba *Adapter) setupPrecisionDetails(symbols []string) error {
 
 func (ba *Adapter) getPrecisionInfo(symbol string) (int, int) {
 	return 4, 3
+}
+
+func (ba *Adapter) handleOrderData(data json.RawMessage) error {
+	var orders []model.BybitWSOrderData
+	err := json.Unmarshal(data, &orders)
+	if err != nil {
+		return err
+	}
+
+	for _, order := range orders {
+		var orderState broker_api.ActiveOrderTracker
+		if order.OrderStatus == "Filled" {
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Filled}
+		} else if order.OrderStatus == "New" {
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Pending}
+		} else if order.OrderStatus == "PartiallyFilled" {
+			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
+			if err != nil {
+				return err
+			}
+			orderState = broker_api.ActiveOrderTracker{Status: broker_api.PartiallyFilled, RemainingQty: remainingQty}
+		}
+		ba.activeOrders[order.OrderID] = orderState
+
+	}
+	return nil
+}
+
+func (ba *Adapter) GetRemainingQty(orderId string) (float64, bool) {
+	if order, exists := ba.activeOrders[orderId]; exists {
+		return order.RemainingQty, true
+	}
+	return 0.0, false
 }

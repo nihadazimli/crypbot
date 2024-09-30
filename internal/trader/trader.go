@@ -52,12 +52,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		return
 	}
 
-	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
-	if err != nil {
-		log.Printf("Error calculating buy order details: %v", err)
-	}
-	orderParams.LimitPrice = orderParams.StopLimit + 1
-	order, err := tc.placeBuyOrder(ctx, orderParams)
+	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
 		log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
@@ -71,30 +66,60 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		case <-ctx.Done():
 			log.Printf("Context cancelled while monitoring buy order. Symbol: %s", symbol)
 		case <-ticker.C:
-			orderStatus, err := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
-			if err != nil {
-				log.Printf("Encountered error while checking order status. Err: %s", err)
-				continue
-			}
+			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
+
 			if orderStatus == broker_api.NotFound {
 				log.Printf("Order not found for symbol %s. OrderId: %s", symbol, order.Details.OrderId)
-				return
+				continue
 			} else if orderStatus == broker_api.Filled {
 				log.Printf("Order filled for %s", symbol)
 				tc.sellReady <- symbol
 				return
 			} else if orderStatus == broker_api.PartiallyFilled {
+				orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+				if err != nil {
+					log.Printf("Buy details can't be calculated for partial order. Err: %s\n", err)
+					continue
+				}
+				remainingQty, ok := tc.broker.GetRemainingQty(order.Details.OrderId)
+				if !ok {
+					log.Printf("Cant get Remaining qty for order %s\n", order.Details.OrderId)
+					continue
+				}
+				orderParams.OrderAmount = remainingQty
+				params := broker_api.AmendOrderRequestParams{
+					Symbol:   symbol,
+					OrderId:  order.Details.OrderId,
+					Price:    &orderParams.LimitPrice,
+					Quantity: &orderParams.OrderAmount,
+					StopLoss: &orderParams.StopLimit,
+				}
+				order, err := tc.broker.AmendOrder(ctx, params)
+				if err != nil {
+					log.Printf("Cannot Amend Partial Order. Err: %s", err)
+					continue
+				}
+
+				log.Printf("Order Id %s is amended successfully for partial order", order.OrderId)
+
 				continue // Let's give chance for order to be fully filled for now
 				// TODO: create new logic for Partially filled orders
 			}
 
 			// For the rest of the states we need to create buy order
-			orderParams, err = tc.CalculateBuyOrderDetails(ctx, symbol)
+			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
 				log.Printf("Buy details can't be calculated. Err: %s", err)
 			}
 			if !tc.buyConditionsMet(symbol) {
-				log.Printf("Buy Conditions are not met! :(")
+				log.Printf("Buy Conditions are not met!\nCancelling current order! :(")
+				params := broker_api.CancelOrderRequestParams{OrderId: order.Details.OrderId, Symbol: symbol}
+				cancelOrder, err := tc.broker.CancelOrder(ctx, params)
+				if err != nil {
+					log.Printf("Cannot cancel order! PANIC!. Err: %v\n", err)
+					return
+				}
+				log.Printf("Order %s cancelled successfully!\n", cancelOrder.OrderId)
 				return
 			}
 			params := broker_api.AmendOrderRequestParams{
@@ -116,9 +141,16 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	}
 }
 
-func (tc *Trader) placeBuyOrder(ctx context.Context, orderParams broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (tc *Trader) placeFastBuyOrder(ctx context.Context, symbol string) (broker_api.BuyOrderResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
+
+	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+	if err != nil {
+		log.Printf("Error calculating buy order details: %v", err)
+	}
+	// REMOVE: only for debugging
+	orderParams.LimitPrice = orderParams.StopLimit * 1.01
 
 	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
 	if err != nil {
@@ -186,8 +218,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, orderParams broker_api.S
 }
 
 func (tc *Trader) buyConditionsMet(symbol string) bool {
-
-	rsiClosed, rsiOk := tc.financial.GetRSILive(symbol)
+	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
 		log.Printf("No RSI data available for %s", symbol)
 		return false
@@ -199,8 +230,8 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 		return false
 	}
 
-	if rsiClosed > tc.cfg.Trader.RSIBuyValue {
-		log.Printf("RSIClosed too big")
+	if rsiLive > tc.cfg.Trader.RSIBuyValue {
+		log.Printf("RSILive too big")
 		return false
 	}
 	_, exists := tc.activeOrders[symbol]
@@ -235,7 +266,7 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 		averagePrice := (bestAskPrice + currentPrice) / 2
 		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
 	}
-	orderAmount := 4.128
+	orderAmount := 0.0
 	//TODO: When orderAmount is zero check through Broker as well. Or generate a logic to construct it.
 	return broker_api.SellOrderRequestParams{Symbol: symbol, OrderAmount: orderAmount, LimitPrice: limitPrice}, err
 
