@@ -3,12 +3,12 @@ package trader
 import (
 	"context"
 	"fmt"
+	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/financial"
 	"log"
 	"time"
 
 	"github.com/nihadazimli/crypbot/internal/broker_api"
-	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/internal/numutils"
 )
 

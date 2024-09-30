@@ -79,7 +79,7 @@ func GetConfig() *Config {
 }
 
 func loadFromYaml() (*Config, error) {
-	configPath := filepath.Join("configs", "config.yaml")
+	configPath := filepath.Join("config", "config.yaml")
 
 	f, err := os.Open(configPath)
 	if err != nil {
