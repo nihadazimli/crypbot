@@ -101,9 +101,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 				}
 
 				log.Printf("Order Id %s is amended successfully for partial order", order.OrderId)
-
-				continue // Let's give chance for order to be fully filled for now
-				// TODO: create new logic for Partially filled orders
+				continue
 			}
 
 			// For the rest of the states we need to create buy order
@@ -178,7 +176,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					rsiLive, ok := tc.financial.GetRSILive(symbol)
 					if !ok {
 						fmt.Println("No RSI live for symbol:", symbol)
-						return // TODO: add logic to reconstruct RSI for symbol
+						return
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
