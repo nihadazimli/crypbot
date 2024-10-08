@@ -7,20 +7,21 @@
   - Available balance > 5
 
 - **Procedure**:
-  0. Check if there is a pending order. If yes, cancel it.
-  1. Get best bid price.
-  2. Get the current price (closedPrice in kline).
-  3. Get available balance.
-  4. If best bid >= current price, then place an order such that:
+  
+  1. Check if there is a pending order. If yes, cancel it.
+  2. Get best bid price.
+  3. Get the current price (closedPrice in kline).
+  4. Get available balance.
+  5. If best bid >= current price, then place an order such that:
      - Limit price = best bid price.
      - Order amount = available balance - 5.
      - Stop limit = 0.95 * limit price.
-  5. If best bid < closed price, then place an order such that:
+  6. If best bid < closed price, then place an order such that:
      - Limit price = (best bid + current price)/2.
      - Round DOWN limit price to the same precision as best bid.
        - e.g., if best bid has 3 decimal points, the limit price should also be rounded to 3 decimals.
      - Order amount = available balance - 5.
-  6. Check if the order is filled:
+  7. Check if the order is filled:
      - If yes, done.
      - If no, check RSI (live) every x seconds.
        - If RSI (live) is below 20, cancel the pending order and open a new order with new set of buy parameters.
