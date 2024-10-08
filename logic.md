@@ -21,10 +21,10 @@
      - Round DOWN limit price to the same precision as best bid.
        - e.g., if best bid has 3 decimal points, the limit price should also be rounded to 3 decimals.
      - Order amount = available balance - 5.
-  7. Check if the order is filled:
+  7. Check if the order is fully filled:
      - If yes, done.
      - If no, check RSI (live) every x seconds.
-       - If RSI (live) is below 20, cancel the pending order and open a new order with new set of buy parameters.
+       - If RSI (live) is below 20, update the pending order with new set of buy parameters. 
        - If RSI (live) is above 20, terminate the process.
 
 ## When Selling:
@@ -45,7 +45,7 @@
      - Limit price = (best ask + current price)/2.
      - Round UP limit price to the same precision as best bid.
      - Order amount = coin balance.
-  7. Check if the order is filled every x seconds.
+  7. Check if the order is fully filled every x seconds.
      - If yes, done.
-     - If no, cancel the pending order and open a new order with new set of sell parameters.
+     - If no, update the pending order with new set of sell parameters. 
   8. If again not filled within x minutes (30 mins, let's say), place a market order with order size = coin balance.
