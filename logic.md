@@ -24,8 +24,8 @@
   7. Check if the order is fully filled:
      - If yes, done.
      - If no, check RSI (live) every x seconds.
-       - If RSI (live) is below 20, update the pending order with new set of buy parameters. 
-       - If RSI (live) is above 20, terminate the process.
+     - If RSI (live) is below 20, cancel the pending order and open a new order with new set of buy parameters. Continue this process until available balance is below 5.
+     - If RSI (live) is above 20, terminate the process.
 
 ## When Selling:
 
@@ -47,5 +47,5 @@
      - Order amount = coin balance.
   7. Check if the order is fully filled every x seconds.
      - If yes, done.
-     - If no, update the pending order with new set of sell parameters. 
+     - If no, cancel the pending order and open a new order with new set of sell parameters. Continue this process until coin balance is below 5 USDT. 
   8. If again not filled within x minutes (30 mins, let's say), place a market order with order size = coin balance.
