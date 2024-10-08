@@ -330,11 +330,15 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_ap
 	return broker_api.NotFound
 }
 
-func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
-	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
-	ba.klineWriteChan = klineWriteChan
+func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
+	return 0, nil
+}
 
-	err := ws.ConnectAndStart(symbols)
+func (ba *Adapter) StartKlineStream(ctx context.Context, params broker_api.KlineStreamRequestParams) error {
+	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
+	ba.klineWriteChan = params.KlineWriteChan
+
+	err := ws.ConnectAndStart(params.Symbols)
 	if err != nil {
 		return err
 	}

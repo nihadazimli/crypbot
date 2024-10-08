@@ -139,6 +139,23 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	}
 }
 
+func (tc *Trader) placeFastSellOrder(ctx context.Context, symbol string) (broker_api.SellOrderResult, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	defer cancel()
+
+	orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
+	if err != nil {
+		log.Printf("Error calculating sell order details: %v", err)
+	}
+
+	orderResult, err := tc.broker.PlaceSellOrder(ctxWithTimeout, orderParams)
+	if err != nil {
+		return orderResult, err
+	}
+	fmt.Println("Sell order placed successfully:", orderResult.Details.OrderId)
+	return orderResult, nil
+}
+
 func (tc *Trader) placeFastBuyOrder(ctx context.Context, symbol string) (broker_api.BuyOrderResult, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
@@ -147,8 +164,6 @@ func (tc *Trader) placeFastBuyOrder(ctx context.Context, symbol string) (broker_
 	if err != nil {
 		log.Printf("Error calculating buy order details: %v", err)
 	}
-	// REMOVE: only for debugging
-	orderParams.LimitPrice = orderParams.StopLimit * 1.01
 
 	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
 	if err != nil {
@@ -170,7 +185,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 			for {
 				select {
 				case <-ctx.Done():
-					fmt.Println("Stopping sell checker")
+					fmt.Println("Stopping sell signal checker")
 					return
 				case <-ticker.C:
 					rsiLive, ok := tc.financial.GetRSILive(symbol)
@@ -180,13 +195,8 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
-						orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
-						if err != nil {
-							fmt.Printf("Error calculating sell order details: %v", err)
-							return
-						}
 						fmt.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
-						if success := tc.executeSellOrder(ctx, orderParams); success {
+						if success := tc.executeSellOrder(ctx, symbol); success {
 							fmt.Printf("Successfully executed sell order for %s", symbol)
 							delete(tc.activeOrders, symbol)
 							return
@@ -202,17 +212,52 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 
 }
 
-func (tc *Trader) executeSellOrder(ctx context.Context, orderParams broker_api.SellOrderRequestParams) bool {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	defer cancel()
+func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
-	orderResult, err := tc.broker.PlaceSellOrder(ctxWithTimeout, orderParams)
+	order, err := tc.placeFastSellOrder(ctx, symbol)
 	if err != nil {
-		log.Println("Failed to place sell order:", err)
-		return false
+		log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
 	}
-	fmt.Println("Sell order placed successfully:", orderResult)
-	return true
+
+	sellTicker := time.NewTicker(tc.getSellOrderCheckDuration())
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Stopping executing sell order")
+		case <-sellTicker.C:
+			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
+
+			if orderStatus == broker_api.NotFound {
+				log.Printf("Order not found for symbol %s. OrderId: %s", symbol, order.Details.OrderId)
+				continue
+			} else if orderStatus == broker_api.Filled {
+				log.Printf("Sell order filled for %s", symbol)
+				tc.sellReady <- symbol
+				return true
+			} else if orderStatus == broker_api.PartiallyFilled {
+				//TODO: implement me
+			}
+
+			orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
+			if err != nil {
+				fmt.Printf("Error calculating sell order details: %v", err)
+				continue
+			}
+			params := broker_api.AmendOrderRequestParams{
+				Symbol:   symbol,
+				OrderId:  order.Details.OrderId,
+				Price:    &orderParams.LimitPrice,
+				Quantity: &orderParams.OrderAmount,
+			}
+			order, err := tc.broker.AmendOrder(ctx, params)
+			if err != nil {
+				log.Printf("Cannot Amend Order. Err: %s", err)
+				continue
+			}
+			log.Printf("Order Id %s is amended successfully", order.OrderId)
+
+		}
+	}
 }
 
 func (tc *Trader) buyConditionsMet(symbol string) bool {
@@ -264,7 +309,10 @@ func (tc *Trader) CalculateSellOrderDetails(ctx context.Context, symbol string) 
 		averagePrice := (bestAskPrice + currentPrice) / 2
 		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
 	}
-	orderAmount := 0.0
+	orderAmount, err := tc.broker.GetSymbolBalance(ctx, symbol)
+	if err != nil {
+		return broker_api.SellOrderRequestParams{}, fmt.Errorf("failed to get balance for %s symbol", symbol)
+	}
 	//TODO: When orderAmount is zero check through Broker as well. Or generate a logic to construct it.
 	return broker_api.SellOrderRequestParams{Symbol: symbol, OrderAmount: orderAmount, LimitPrice: limitPrice}, err
 
@@ -305,6 +353,10 @@ func (tc *Trader) CalculateBuyOrderDetails(ctx context.Context, symbol string) (
 		StopLimit:   stopLimit,
 	}, nil
 
+}
+
+func (tc *Trader) getSellOrderCheckDuration() time.Duration {
+	return time.Duration(tc.cfg.Trader.SellCheckInterval) * time.Second
 }
 
 func (tc *Trader) getAPITimeoutDuration() time.Duration {

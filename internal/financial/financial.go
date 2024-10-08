@@ -61,7 +61,10 @@ func Start(ctx context.Context, broker broker_api.BrokerAPI, closedKlineReceived
 
 	fe := NewFinancialEngine(cfg, broker, klineReceived, closedKlineReceived, buyReady, timeout)
 	fe.loadRecentKlineData()
-	err := fe.broker.StartKlineStream(ctx, cfg.KlineTopics, klineReceived)
+
+	err := fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
+		Symbols: cfg.KlineTopics, KlineWriteChan: klineReceived,
+	})
 	if err != nil {
 		log.Printf("Cannot start KlineStream. Err: %v", err)
 	}

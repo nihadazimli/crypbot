@@ -12,8 +12,9 @@ type BrokerAPI interface {
 	GetAccountBalance(ctx context.Context) (AccountBalanceResult, error)
 	AmendOrder(ctx context.Context, params AmendOrderRequestParams) (AmendOrderResult, error)
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
+	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
+	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
 	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
-	StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error
 	GetRemainingQty(orderId string) (float64, bool)
 }
 
@@ -24,6 +25,11 @@ type BuyOrderResult struct {
 
 type AccountBalanceResult struct {
 	Total float64
+}
+
+type KlineStreamRequestParams struct {
+	Symbols        []string
+	KlineWriteChan chan model.WSInternalKline
 }
 
 type BuyOrderResultDetails struct {
