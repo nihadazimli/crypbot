@@ -47,5 +47,5 @@
      - Order amount = coin balance.
   7. Check if the order is fully filled every x seconds.
      - If yes, done.
-     - If no, cancel the pending order and open a new order with new set of sell parameters. Continue this process until coin balance is below 5 USDT. 
+     - If no, cancel the pending order and open a new order with new set of sell parameters. 
   8. If again not filled within x minutes (30 mins, let's say), place a market order with order size = coin balance.
