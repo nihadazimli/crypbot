@@ -3,7 +3,6 @@ package bybit
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
@@ -19,6 +18,9 @@ type WalletResult struct {
 	List []struct {
 		TotalAvailableBalance string `json:"totalAvailableBalance"`
 		TotalWalletBalance    string `json:"totalWalletBalance"`
+		Coin                  []struct {
+			WalletBalance string `json:"walletBalance"`
+		} `json:"coin"`
 	} `json:"list"`
 }
 
@@ -65,27 +67,34 @@ func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBal
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
 	}
-	walletResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).GetAccountWallet(ctx)
+
+	walletResult, err := ba.getWalletResult(ctx, requestParams)
+
 	if err != nil {
 		return broker_api.AccountBalanceResult{}, err
 	}
+
+	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
+
+	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
+}
+
+func (ba *Adapter) getWalletResult(ctx context.Context, requestParams map[string]interface{}) (WalletResult, error) {
+	walletResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).GetAccountWallet(ctx)
+	if err != nil {
+		return WalletResult{}, err
+	}
 	resultData, err := json.Marshal(walletResponse.Result)
 	if err != nil {
-		return broker_api.AccountBalanceResult{}, err
+		return WalletResult{}, err
 	}
 
 	var walletResult WalletResult
 	err = json.Unmarshal(resultData, &walletResult)
 	if err != nil {
-		return broker_api.AccountBalanceResult{}, err
+		return WalletResult{}, err
 	}
-
-	if len(walletResult.List) == 0 {
-		return broker_api.AccountBalanceResult{}, errors.New("wallet result list is empty")
-	}
-	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
-
-	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
+	return walletResult, nil
 }
 
 func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
@@ -330,11 +339,15 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_ap
 	return broker_api.NotFound
 }
 
-func (ba *Adapter) StartKlineStream(ctx context.Context, symbols []string, klineWriteChan chan model.WSInternalKline) error {
-	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
-	ba.klineWriteChan = klineWriteChan
+func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
+	return 0, nil
+}
 
-	err := ws.ConnectAndStart(symbols)
+func (ba *Adapter) StartKlineStream(ctx context.Context, params broker_api.KlineStreamRequestParams) error {
+	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
+	ba.klineWriteChan = params.KlineWriteChan
+
+	err := ws.ConnectAndStart(params.Symbols)
 	if err != nil {
 		return err
 	}
