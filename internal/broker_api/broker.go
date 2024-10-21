@@ -15,7 +15,7 @@ type BrokerAPI interface {
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
 	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
-	GetRemainingQty(orderId string) (float64, bool)
+	GetRemainingQtyForPartialOrder(ctx context.Context, params OpenOrderRequestParams) (float64, error)
 }
 
 type BuyOrderResult struct {
@@ -113,4 +113,9 @@ const (
 type ActiveOrderTracker struct {
 	Status       OrderStatus
 	RemainingQty float64
+}
+
+type OpenOrderRequestParams struct {
+	OrderId string
+	Symbol  string
 }
