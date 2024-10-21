@@ -96,9 +96,10 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			}
 
 			if orderStatus == broker_api.PartiallyFilled {
-				remainingQty, ok := tc.broker.GetRemainingQty(order.Details.OrderId)
-				if !ok {
-					log.Printf("Cant get Remaining qty for order %s\n", order.Details.OrderId)
+				params := broker_api.OpenOrderRequestParams{OrderId: order.Details.OrderId}
+				remainingQty, err := tc.broker.GetRemainingQtyForPartialOrder(ctx, params)
+				if err != nil {
+					log.Printf("Cant get Remaining qty for buy order %s. Error: %v\n", order.Details.OrderId, err)
 					continue
 				}
 				orderParams.OrderAmount = remainingQty
@@ -227,9 +228,10 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			}
 
 			if orderStatus == broker_api.PartiallyFilled {
-				remainingQty, ok := tc.broker.GetRemainingQty(order.Details.OrderId)
-				if !ok {
-					log.Printf("Cant get Remaining qty for order %s\n", order.Details.OrderId)
+				params := broker_api.OpenOrderRequestParams{OrderId: order.Details.OrderId}
+				remainingQty, err := tc.broker.GetRemainingQtyForPartialOrder(ctx, params)
+				if err != nil {
+					log.Printf("Can't get Remaining qty for sell order %s. Error: %v\n", order.Details.OrderId, err)
 					continue
 				}
 				orderParams.OrderAmount = remainingQty
