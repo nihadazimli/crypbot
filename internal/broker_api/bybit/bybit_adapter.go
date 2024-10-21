@@ -72,7 +72,6 @@ func NewBybitAdapter() *Adapter {
 }
 
 func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
-
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
 	}
@@ -349,7 +348,26 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_ap
 }
 
 func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
-	return 0, nil
+	requestParams := map[string]interface{}{
+		"accountType": "UNIFIED",
+		"coin":        symbol,
+	}
+
+	walletResult, err := ba.getWalletResult(ctx, requestParams)
+	if err != nil {
+		return 0.0, err
+	}
+
+	if len(walletResult.List[0].Coin) == 0 {
+		return 0.0, fmt.Errorf("cannot get balance for coin %s", symbol)
+	}
+
+	totalSymbolBalance, err := strconv.ParseFloat(walletResult.List[0].Coin[0].WalletBalance, 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("error parsing total symbol wallet balance for %s symbol", symbol)
+	}
+
+	return totalSymbolBalance, nil
 }
 
 func (ba *Adapter) StartKlineStream(ctx context.Context, params broker_api.KlineStreamRequestParams) error {
