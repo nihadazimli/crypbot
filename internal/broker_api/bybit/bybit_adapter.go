@@ -14,6 +14,15 @@ import (
 	"strings"
 )
 
+type OrderInfo struct {
+	List []struct {
+		OrderId   string `json:"orderId"`
+		Price     string `json:"price"`
+		Qty       string `json:"qty"`
+		LeavesQty string `json:"leavesQty"`
+	}
+}
+
 type WalletResult struct {
 	List []struct {
 		TotalAvailableBalance string `json:"totalAvailableBalance"`
@@ -468,9 +477,51 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	return nil
 }
 
-func (ba *Adapter) GetRemainingQty(orderId string) (float64, bool) {
-	if order, exists := ba.activeOrders[orderId]; exists {
-		return order.RemainingQty, true
+func (ba *Adapter) GetRemainingQtyForPartialOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (float64, error) {
+	if order, exists := ba.activeOrders[params.OrderId]; exists {
+		return order.RemainingQty, nil // If it exists locally, return it directly.
 	}
-	return 0.0, false
+
+	openOrderInfo, err := ba.getOpenOrder(ctx, params)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
+	}
+
+	if len(openOrderInfo.List) == 0 {
+		return 0.0, fmt.Errorf("no open orders found for order ID: %s", params.OrderId)
+	}
+
+	remainingQty, err := strconv.ParseFloat(openOrderInfo.List[0].LeavesQty, 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("error parsing remaining quantity for order ID %s: %v", params.OrderId, err)
+	}
+
+	return remainingQty, nil
+}
+
+func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (OrderInfo, error) {
+	queryParams := map[string]interface{}{"category": "spot"}
+
+	if params.OrderId != "" {
+		queryParams["orderId"] = params.OrderId
+	}
+	if params.Symbol != "" {
+		queryParams["symbol"] = params.Symbol
+	}
+
+	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
+	if err != nil {
+		return OrderInfo{}, err
+	}
+	resultData, err := json.Marshal(openOrdersResponse.Result)
+	if err != nil {
+		return OrderInfo{}, err
+	}
+
+	var orderInfo OrderInfo
+	err = json.Unmarshal(resultData, &orderInfo)
+	if err != nil {
+		return OrderInfo{}, err
+	}
+	return orderInfo, nil
 }
