@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nihadazimli/crypbot/internal/broker_api"
-	"github.com/nihadazimli/crypbot/internal/numutils"
+	"github.com/nihadazimli/crypbot/pkg/numutils"
 )
 
 type Trader struct {
