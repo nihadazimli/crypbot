@@ -381,9 +381,11 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_ap
 }
 
 func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
+	baseCoin := removeUSDTSuffix(symbol)
+
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
-		"coin":        symbol,
+		"coin":        baseCoin,
 	}
 
 	walletResult, err := ba.getWalletResult(ctx, requestParams)
@@ -612,4 +614,14 @@ func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (in
 	}
 
 	return 0, 0, fmt.Errorf("symbol %s not found in response", symbol)
+}
+
+// removeUSDTSuffix removes the "USDT" suffix from the symbol if present.
+// If the symbol doesn't end with "USDT", it returns the symbol unchanged.
+func removeUSDTSuffix(symbol string) string {
+	const suffix = "USDT"
+	if strings.HasSuffix(symbol, suffix) {
+		return strings.TrimSuffix(symbol, suffix)
+	}
+	return symbol
 }
