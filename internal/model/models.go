@@ -67,3 +67,8 @@ type CoinMetrics struct {
 	RSILive           float64
 	VolumeValueMedian float64
 }
+
+type Precision struct {
+	Qty   int
+	Price int
+}

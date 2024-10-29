@@ -1,6 +1,7 @@
 package numutils
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -28,4 +29,13 @@ func DecimalPlaces(f float64) int {
 		return len(s) - i - 1
 	}
 	return 0
+}
+
+// CalculatePrecision returns the number of decimal places in the value
+func CalculatePrecision(value string) (int, error) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("value %s is not a valid decimal", value)
+	}
+	return len(parts[1]), nil
 }
