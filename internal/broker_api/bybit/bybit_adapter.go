@@ -16,17 +16,25 @@ import (
 	"sync"
 )
 
-type OrderInfo struct {
+type OrderInfoResult struct {
 	List []struct {
 		OrderId   string `json:"orderId"`
 		Price     string `json:"price"`
 		Qty       string `json:"qty"`
 		LeavesQty string `json:"leavesQty"`
+		Symbol    string `json:"symbol"`
 	}
 }
+type OrderInfo struct {
+	OrderId   string `json:"orderId"`
+	Price     string `json:"price"`
+	Qty       string `json:"qty"`
+	LeavesQty string `json:"leavesQty"`
+	Symbol    string `json:"symbol"`
+}
+
 type InstrumentResult struct {
-	Category string `json:"category"`
-	List     []struct {
+	List []struct {
 		Symbol        string `json:"symbol"`
 		LotSizeFilter struct {
 			BasePrecision string `json:"basePrecision"`
@@ -517,18 +525,16 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(ctx context.Context, params br
 		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
 	}
 
-	if len(openOrderInfo.List) == 0 {
-		return 0.0, fmt.Errorf("no open orders found for order ID: %s", params.OrderId)
-	}
-
-	remainingQty, err := strconv.ParseFloat(openOrderInfo.List[0].LeavesQty, 64)
+	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
 	if err != nil {
 		return 0.0, fmt.Errorf("error parsing remaining quantity for order ID %s: %v", params.OrderId, err)
 	}
 
 	return remainingQty, nil
 }
-
+func (ba *Adapter) GetOpenOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (OrderInfo, error) {
+	return ba.getOpenOrder(ctx, params)
+}
 func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (OrderInfo, error) {
 	queryParams := map[string]interface{}{"category": "spot"}
 
@@ -548,12 +554,18 @@ func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrder
 		return OrderInfo{}, err
 	}
 
-	var orderInfo OrderInfo
-	err = json.Unmarshal(resultData, &orderInfo)
+	var orderInfoResult OrderInfoResult
+	err = json.Unmarshal(resultData, &orderInfoResult)
 	if err != nil {
 		return OrderInfo{}, err
 	}
-	return orderInfo, nil
+
+	for _, entry := range orderInfoResult.List {
+		if entry.OrderId == params.OrderId || entry.Symbol == params.Symbol {
+			return OrderInfo{OrderId: entry.OrderId, Symbol: entry.Symbol, Price: entry.Price, Qty: entry.Qty, LeavesQty: entry.LeavesQty}, nil
+		}
+	}
+	return OrderInfo{}, fmt.Errorf("order with following params %v not found in response for open orders", params)
 }
 
 func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (int, int, error) {
