@@ -69,6 +69,6 @@ type CoinMetrics struct {
 }
 
 type Precision struct {
-	Qty   int
-	Price int
+	Qty   float64
+	Price float64
 }

@@ -140,7 +140,7 @@ func (c *WebSocketClient) readPump() {
 		err = c.handler(message)
 		if err != nil {
 			log.Println("Error handling message:", err)
-			return
+			continue
 		}
 	}
 }

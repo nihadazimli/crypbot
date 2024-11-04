@@ -130,14 +130,19 @@ func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrder
 	if err != nil {
 		return broker_api.BuyOrderResult{}, fmt.Errorf("PlaceBuyOrder - failed to get precision: %w", err)
 	}
+
+	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
+	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
+	stopLossPrice := numutils.RoundDownToPrecision(params.StopLimit, precision.Price)
+
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
 		"side":        "Buy",
 		"orderType":   "Limit",
-		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', precision.Qty, 64),
-		"price":       strconv.FormatFloat(params.LimitPrice, 'f', precision.Price, 64),
-		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', precision.Price, 64),
+		"qty":         strconv.FormatFloat(qty, 'f', -1, 64),
+		"price":       strconv.FormatFloat(limitPrice, 'f', -1, 64),
+		"stopLoss":    strconv.FormatFloat(stopLossPrice, 'f', -1, 64),
 		"slOrderType": "Market",
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
@@ -240,14 +245,20 @@ func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrd
 		return broker_api.SellOrderResult{}, fmt.Errorf("PlaceSellOrder - failed to get precision: %w", err)
 	}
 
+	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
+	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
+
+	fmt.Printf("params: %v\n", params)
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
 		"side":      "Sell",
 		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', precision.Qty, 64),
-		"price":     strconv.FormatFloat(params.LimitPrice, 'f', precision.Price, 64),
+		"qty":       strconv.FormatFloat(qty, 'f', -1, 64),
+		"price":     strconv.FormatFloat(limitPrice, 'f', -1, 64),
 	}
+
+	fmt.Printf("request params: %v\n", requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -333,15 +344,18 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 	}
 
 	if params.Price != nil {
-		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', precision.Price, 64)
+		price := numutils.RoundDownToPrecision(*params.Price, precision.Qty)
+		requestParams["price"] = strconv.FormatFloat(price, 'f', -1, 64)
 	}
 
 	if params.Quantity != nil {
-		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', precision.Qty, 64)
+		qty := numutils.RoundDownToPrecision(*params.Quantity, precision.Qty)
+		requestParams["qty"] = strconv.FormatFloat(qty, 'f', -1, 64)
 	}
 
 	if params.StopLoss != nil {
-		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', precision.Price, 64)
+		stopLoss := numutils.RoundDownToPrecision(*params.StopLoss, precision.Qty)
+		requestParams["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
 	}
 
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
@@ -445,7 +459,7 @@ func getSymbolFromKlineTopic(topic string) string {
 func (ba *Adapter) startOrderStream(ctx context.Context) error {
 	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
 		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handlePrivateWSMessages)
-	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
+	err := ws.ConnectAndStart([]string{"order"})
 	if err != nil {
 		return err
 	}
@@ -471,6 +485,7 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 func (ba *Adapter) GetPrecision(ctx context.Context, symbol string) (model.Precision, error) {
 	return ba.getPrecision(ctx, symbol)
 }
+
 func (ba *Adapter) getPrecision(ctx context.Context, symbol string) (model.Precision, error) {
 	ba.precisionMutex.RLock()
 	p, exists := ba.precision[symbol]
@@ -570,7 +585,7 @@ func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrder
 	return OrderInfo{}, fmt.Errorf("order with following params %v not found in response for open orders", params)
 }
 
-func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (int, int, error) {
+func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (float64, float64, error) {
 	params := map[string]interface{}{
 		"symbol":   symbol,
 		"category": "spot",
@@ -598,13 +613,13 @@ func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (in
 	for _, entry := range instrumentResult.List {
 		if entry.Symbol == symbol {
 			// Calculate precision for Qty
-			qtyPrec, err := numutils.CalculatePrecision(entry.LotSizeFilter.BasePrecision)
+			qtyPrec, err := strconv.ParseFloat(strings.TrimSpace(entry.LotSizeFilter.BasePrecision), 64)
 			if err != nil {
 				return 0, 0, fmt.Errorf("invalid basePrecision format: %w", err)
 			}
 
 			// Calculate precision for Price
-			pricePrec, err := numutils.CalculatePrecision(entry.PriceFilter.TickSize)
+			pricePrec, err := strconv.ParseFloat(strings.TrimSpace(entry.PriceFilter.TickSize), 64)
 			if err != nil {
 				return 0, 0, fmt.Errorf("invalid tickSize format: %w", err)
 			}
