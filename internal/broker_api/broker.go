@@ -1,3 +1,4 @@
+// Package broker_api is interface that implements interaction between broker and application
 package broker_api
 
 import (
@@ -15,7 +16,10 @@ type BrokerAPI interface {
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
 	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
-	GetRemainingQtyForPartialOrder(ctx context.Context, params OpenOrderRequestParams) (float64, error)
+	GetRemainingQtyForPartialOrder(
+		ctx context.Context,
+		params OpenOrderRequestParams,
+	) (float64, error)
 }
 
 type BuyOrderResult struct {

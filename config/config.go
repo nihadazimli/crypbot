@@ -1,3 +1,4 @@
+// Package config includes configs used accross the application
 package config
 
 import (
@@ -58,6 +59,7 @@ type TraderConfig struct {
 	SellCheckInterval     int     `yaml:"sell_check_interval"`
 	BuyCheckInterval      int     `yaml:"buy_check_interval"`
 	BalanceToLeave        float64 `yaml:"balance_to_leave"`
+	StopLossRatio         float64 `yaml:"stop_loss_ratio"`
 }
 
 type Defaults struct {

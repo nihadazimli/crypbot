@@ -1,3 +1,4 @@
+// Package model includes every model used in the code
 package model
 
 import (
@@ -69,6 +70,6 @@ type CoinMetrics struct {
 }
 
 type Precision struct {
-	Qty   int
-	Price int
+	Qty   float64
+	Price float64
 }

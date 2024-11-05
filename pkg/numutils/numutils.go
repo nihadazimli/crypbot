@@ -1,3 +1,4 @@
+// Package numutils includes all numerical utility functions
 package numutils
 
 import (

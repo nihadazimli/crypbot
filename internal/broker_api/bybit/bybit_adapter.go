@@ -1,3 +1,4 @@
+// Package bybit implements broker_api interface for specific broker called Bybit
 package bybit
 
 import (
@@ -77,7 +78,11 @@ type Adapter struct {
 func NewBybitAdapter() *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
-		HTTPClient:   bybit.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybit.WithBaseURL(bybit.MAINNET)),
+		HTTPClient: bybit.NewBybitHttpClient(
+			cfg.Broker.API.Key,
+			cfg.Broker.API.Secret,
+			bybit.WithBaseURL(bybit.MAINNET),
+		),
 		cfg:          cfg,
 		precision:    make(map[string]model.Precision),
 		activeOrders: make(map[string]broker_api.ActiveOrderTracker),
@@ -107,8 +112,12 @@ func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBal
 	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
 
-func (ba *Adapter) getWalletResult(ctx context.Context, requestParams map[string]interface{}) (WalletResult, error) {
-	walletResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).GetAccountWallet(ctx)
+func (ba *Adapter) getWalletResult(
+	ctx context.Context,
+	requestParams map[string]interface{},
+) (WalletResult, error) {
+	walletResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).
+		GetAccountWallet(ctx)
 	if err != nil {
 		return WalletResult{}, err
 	}
@@ -125,19 +134,30 @@ func (ba *Adapter) getWalletResult(ctx context.Context, requestParams map[string
 	return walletResult, nil
 }
 
-func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrderRequestParams) (broker_api.BuyOrderResult, error) {
+func (ba *Adapter) PlaceBuyOrder(
+	ctx context.Context,
+	params broker_api.BuyOrderRequestParams,
+) (broker_api.BuyOrderResult, error) {
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.BuyOrderResult{}, fmt.Errorf("PlaceBuyOrder - failed to get precision: %w", err)
+		return broker_api.BuyOrderResult{}, fmt.Errorf(
+			"PlaceBuyOrder - failed to get precision: %w",
+			err,
+		)
 	}
+
+	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
+	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
+	stopLossPrice := numutils.RoundDownToPrecision(params.StopLimit, precision.Price)
+
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
 		"side":        "Buy",
 		"orderType":   "Limit",
-		"qty":         strconv.FormatFloat(params.OrderAmount, 'f', precision.Qty, 64),
-		"price":       strconv.FormatFloat(params.LimitPrice, 'f', precision.Price, 64),
-		"stopLoss":    strconv.FormatFloat(params.StopLimit, 'f', precision.Price, 64),
+		"qty":         strconv.FormatFloat(qty, 'f', -1, 64),
+		"price":       strconv.FormatFloat(limitPrice, 'f', -1, 64),
+		"stopLoss":    strconv.FormatFloat(stopLossPrice, 'f', -1, 64),
 		"slOrderType": "Market",
 	}
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
@@ -152,9 +172,13 @@ func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrder
 		if jsonErr != nil {
 			fmt.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Place Buy Order\nFull response: %s", string(responseJSON))
+			fmt.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s", string(responseJSON), requestParams)
 		}
-		return broker_api.BuyOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+		return broker_api.BuyOrderResult{}, fmt.Errorf(
+			"API error. Code: %v Error: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 
 	// Handling the Result field which is interface{}
@@ -166,7 +190,10 @@ func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrder
 	var buyDetails broker_api.BuyOrderResultDetails
 	err = json.Unmarshal(resultData, &buyDetails)
 	if err != nil {
-		return broker_api.BuyOrderResult{}, fmt.Errorf("error unmarshalling result to BuyOrderResultDetails: %s", err)
+		return broker_api.BuyOrderResult{}, fmt.Errorf(
+			"error unmarshalling result to BuyOrderResultDetails: %s",
+			err,
+		)
 	}
 
 	return broker_api.BuyOrderResult{
@@ -178,7 +205,10 @@ func (ba *Adapter) PlaceBuyOrder(ctx context.Context, params broker_api.BuyOrder
 	}, nil
 }
 
-func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBookRequestParams) (broker_api.OrderBookResult, error) {
+func (ba *Adapter) GetOrderBook(
+	ctx context.Context,
+	params broker_api.OrderBookRequestParams,
+) (broker_api.OrderBookResult, error) {
 	requestParams := map[string]interface{}{
 		"symbol":   params.Symbol,
 		"limit":    params.Limit,
@@ -188,7 +218,11 @@ func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBook
 
 	response, err := orderBookService.GetOrderBookInfo(ctx)
 	if err != nil {
-		return broker_api.OrderBookResult{}, fmt.Errorf("cannot fetch orderbook\n symbol:%s\nerr:%v", params.Symbol, err)
+		return broker_api.OrderBookResult{}, fmt.Errorf(
+			"cannot fetch orderbook\n symbol:%s\nerr:%v",
+			params.Symbol,
+			err,
+		)
 	}
 
 	// Check if the response indicates success
@@ -199,7 +233,11 @@ func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBook
 		} else {
 			fmt.Printf("Error: Get Order Book\nFull response: %s", string(responseJSON))
 		}
-		return broker_api.OrderBookResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+		return broker_api.OrderBookResult{}, fmt.Errorf(
+			"API error. Code: %v Error: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 
 	resultData, err := json.Marshal(response.Result)
@@ -210,7 +248,10 @@ func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBook
 	var orderBookResponse OrderBookResponse
 	err = json.Unmarshal(resultData, &orderBookResponse)
 	if err != nil {
-		return broker_api.OrderBookResult{}, fmt.Errorf("error unmarshalling result to OrderBookResponse: %s", err)
+		return broker_api.OrderBookResult{}, fmt.Errorf(
+			"error unmarshalling result to OrderBookResponse: %s",
+			err,
+		)
 	}
 
 	var all_asks []broker_api.OrderBookDetail
@@ -233,21 +274,33 @@ func (ba *Adapter) GetOrderBook(ctx context.Context, params broker_api.OrderBook
 	}, nil
 }
 
-func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrderRequestParams) (broker_api.SellOrderResult, error) {
+func (ba *Adapter) PlaceSellOrder(
+	ctx context.Context,
+	params broker_api.SellOrderRequestParams,
+) (broker_api.SellOrderResult, error) {
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.SellOrderResult{}, fmt.Errorf("PlaceSellOrder - failed to get precision: %w", err)
+		return broker_api.SellOrderResult{}, fmt.Errorf(
+			"PlaceSellOrder - failed to get precision: %w",
+			err,
+		)
 	}
 
+	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
+	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
+
+	fmt.Printf("params: %v\n", params)
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
 		"side":      "Sell",
 		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(params.OrderAmount, 'f', precision.Qty, 64),
-		"price":     strconv.FormatFloat(params.LimitPrice, 'f', precision.Price, 64),
+		"qty":       strconv.FormatFloat(qty, 'f', -1, 64),
+		"price":     strconv.FormatFloat(limitPrice, 'f', -1, 64),
 	}
+
+	fmt.Printf("request params: %v\n", requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -262,7 +315,11 @@ func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrd
 		} else {
 			fmt.Printf("Error: Place Sell Order\nFull response: %s", string(responseJSON))
 		}
-		return broker_api.SellOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+		return broker_api.SellOrderResult{}, fmt.Errorf(
+			"API error. Code: %v Error: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 
 	// Handling the Result field which is interface{}
@@ -274,7 +331,10 @@ func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrd
 	var sellDetails broker_api.SellOrderResultDetails
 	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
-		return broker_api.SellOrderResult{}, fmt.Errorf("error unmarshalling result to BuyOrderResultDetails: %s", err)
+		return broker_api.SellOrderResult{}, fmt.Errorf(
+			"error unmarshalling result to BuyOrderResultDetails: %s",
+			err,
+		)
 	}
 
 	return broker_api.SellOrderResult{
@@ -286,7 +346,10 @@ func (ba *Adapter) PlaceSellOrder(ctx context.Context, params broker_api.SellOrd
 	}, nil
 }
 
-func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrderRequestParams) (broker_api.CancelOrderResult, error) {
+func (ba *Adapter) CancelOrder(
+	ctx context.Context,
+	params broker_api.CancelOrderRequestParams,
+) (broker_api.CancelOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
@@ -306,7 +369,11 @@ func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrde
 		} else {
 			fmt.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
 		}
-		return broker_api.CancelOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+		return broker_api.CancelOrderResult{}, fmt.Errorf(
+			"API error. Code: %v Error: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 
 	resultData, err := json.Marshal(response.Result)
@@ -321,7 +388,10 @@ func (ba *Adapter) CancelOrder(ctx context.Context, params broker_api.CancelOrde
 
 }
 
-func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderRequestParams) (broker_api.AmendOrderResult, error) {
+func (ba *Adapter) AmendOrder(
+	ctx context.Context,
+	params broker_api.AmendOrderRequestParams,
+) (broker_api.AmendOrderResult, error) {
 	requestParams := make(map[string]interface{})
 	requestParams["category"] = "spot"
 	requestParams["symbol"] = params.Symbol
@@ -329,19 +399,25 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.AmendOrderResult{}, fmt.Errorf("AmendOrder - failed to get precision: %w", err)
+		return broker_api.AmendOrderResult{}, fmt.Errorf(
+			"AmendOrder - failed to get precision: %w",
+			err,
+		)
 	}
 
 	if params.Price != nil {
-		requestParams["price"] = strconv.FormatFloat(*params.Price, 'f', precision.Price, 64)
+		price := numutils.RoundDownToPrecision(*params.Price, precision.Price)
+		requestParams["price"] = strconv.FormatFloat(price, 'f', -1, 64)
 	}
 
 	if params.Quantity != nil {
-		requestParams["qty"] = strconv.FormatFloat(*params.Quantity, 'f', precision.Qty, 64)
+		qty := numutils.RoundDownToPrecision(*params.Quantity, precision.Qty)
+		requestParams["qty"] = strconv.FormatFloat(qty, 'f', -1, 64)
 	}
 
 	if params.StopLoss != nil {
-		requestParams["stopLoss"] = strconv.FormatFloat(*params.StopLoss, 'f', precision.Price, 64)
+		stopLoss := numutils.RoundDownToPrecision(*params.StopLoss, precision.Price)
+		requestParams["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
 	}
 
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
@@ -355,9 +431,13 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 		if jsonErr != nil {
 			fmt.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Amend Order\nFull response: %s", string(responseJSON))
+			fmt.Printf("\nError: Amend Order\nFull response: %s\nparams:%s", string(responseJSON), requestParams)
 		}
-		return broker_api.AmendOrderResult{}, fmt.Errorf("API error. Code: %v Error: %s", response.RetCode, response.RetMsg)
+		return broker_api.AmendOrderResult{}, fmt.Errorf(
+			"API error. Code: %v Error: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 
 	resultData, err := json.Marshal(response.Result)
@@ -368,7 +448,10 @@ func (ba *Adapter) AmendOrder(ctx context.Context, params broker_api.AmendOrderR
 	var details broker_api.AmendOrderResult
 	err = json.Unmarshal(resultData, &details)
 	if err != nil {
-		return broker_api.AmendOrderResult{}, fmt.Errorf("error unmarshalling result to AmendOrderResultDetails: %s", err)
+		return broker_api.AmendOrderResult{}, fmt.Errorf(
+			"error unmarshalling result to AmendOrderResultDetails: %s",
+			err,
+		)
 	}
 	return details, nil
 }
@@ -381,9 +464,11 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_ap
 }
 
 func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
+	baseCoin := removeUSDTSuffix(symbol)
+
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
-		"coin":        symbol,
+		"coin":        baseCoin,
 	}
 
 	walletResult, err := ba.getWalletResult(ctx, requestParams)
@@ -403,8 +488,16 @@ func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64
 	return totalSymbolBalance, nil
 }
 
-func (ba *Adapter) StartKlineStream(ctx context.Context, params broker_api.KlineStreamRequestParams) error {
-	ws := websocket.NewWebSocketClientPublic(ctx, ba.cfg.Broker.WebSocket.AddressPublic, ba.cfg.Broker.WebSocket.PingInterval, ba.handleKlineMessages)
+func (ba *Adapter) StartKlineStream(
+	ctx context.Context,
+	params broker_api.KlineStreamRequestParams,
+) error {
+	ws := websocket.NewWebSocketClientPublic(
+		ctx,
+		ba.cfg.Broker.WebSocket.AddressPublic,
+		ba.cfg.Broker.WebSocket.PingInterval,
+		ba.handleKlineMessages,
+	)
 	ba.klineWriteChan = params.KlineWriteChan
 
 	err := ws.ConnectAndStart(params.Symbols)
@@ -441,9 +534,15 @@ func getSymbolFromKlineTopic(topic string) string {
 }
 
 func (ba *Adapter) startOrderStream(ctx context.Context) error {
-	ws := websocket.NewWebSocketClientPrivate(ctx, ba.cfg.Broker.WebSocket.AddressPrivate,
-		ba.cfg.Broker.API.Key, ba.cfg.Broker.API.Secret, ba.cfg.Broker.WebSocket.PingInterval, ba.handlePrivateWSMessages)
-	err := ws.ConnectAndStart([]string{"order", "position", "execution.fast"})
+	ws := websocket.NewWebSocketClientPrivate(
+		ctx,
+		ba.cfg.Broker.WebSocket.AddressPrivate,
+		ba.cfg.Broker.API.Key,
+		ba.cfg.Broker.API.Secret,
+		ba.cfg.Broker.WebSocket.PingInterval,
+		ba.handlePrivateWSMessages,
+	)
+	err := ws.ConnectAndStart([]string{"order"})
 	if err != nil {
 		return err
 	}
@@ -462,13 +561,18 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 	case "order":
 		return ba.handleOrderData(privateMessage.Data)
 	default:
-		return fmt.Errorf("unhandled topic: %s,Data:%s", privateMessage.Topic, string(privateMessage.Data))
+		return fmt.Errorf(
+			"unhandled topic: %s,Data:%s",
+			privateMessage.Topic,
+			string(privateMessage.Data),
+		)
 	}
 
 }
 func (ba *Adapter) GetPrecision(ctx context.Context, symbol string) (model.Precision, error) {
 	return ba.getPrecision(ctx, symbol)
 }
+
 func (ba *Adapter) getPrecision(ctx context.Context, symbol string) (model.Precision, error) {
 	ba.precisionMutex.RLock()
 	p, exists := ba.precision[symbol]
@@ -515,7 +619,10 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	return nil
 }
 
-func (ba *Adapter) GetRemainingQtyForPartialOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (float64, error) {
+func (ba *Adapter) GetRemainingQtyForPartialOrder(
+	ctx context.Context,
+	params broker_api.OpenOrderRequestParams,
+) (float64, error) {
 	if order, exists := ba.activeOrders[params.OrderId]; exists {
 		return order.RemainingQty, nil // If it exists locally, return it directly.
 	}
@@ -527,15 +634,27 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(ctx context.Context, params br
 
 	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
 	if err != nil {
-		return 0.0, fmt.Errorf("error parsing remaining quantity for order ID %s: %v", params.OrderId, err)
+		return 0.0, fmt.Errorf(
+			"error parsing remaining quantity for order ID %s: %v",
+			params.OrderId,
+			err,
+		)
 	}
 
 	return remainingQty, nil
 }
-func (ba *Adapter) GetOpenOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (OrderInfo, error) {
+
+func (ba *Adapter) GetOpenOrder(
+	ctx context.Context,
+	params broker_api.OpenOrderRequestParams,
+) (OrderInfo, error) {
 	return ba.getOpenOrder(ctx, params)
 }
-func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrderRequestParams) (OrderInfo, error) {
+
+func (ba *Adapter) getOpenOrder(
+	ctx context.Context,
+	params broker_api.OpenOrderRequestParams,
+) (OrderInfo, error) {
 	queryParams := map[string]interface{}{"category": "spot"}
 
 	if params.OrderId != "" {
@@ -545,7 +664,8 @@ func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrder
 		queryParams["symbol"] = params.Symbol
 	}
 
-	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
+	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).
+		GetOpenOrders(ctx)
 	if err != nil {
 		return OrderInfo{}, err
 	}
@@ -562,13 +682,25 @@ func (ba *Adapter) getOpenOrder(ctx context.Context, params broker_api.OpenOrder
 
 	for _, entry := range orderInfoResult.List {
 		if entry.OrderId == params.OrderId || entry.Symbol == params.Symbol {
-			return OrderInfo{OrderId: entry.OrderId, Symbol: entry.Symbol, Price: entry.Price, Qty: entry.Qty, LeavesQty: entry.LeavesQty}, nil
+			return OrderInfo{
+				OrderId:   entry.OrderId,
+				Symbol:    entry.Symbol,
+				Price:     entry.Price,
+				Qty:       entry.Qty,
+				LeavesQty: entry.LeavesQty,
+			}, nil
 		}
 	}
-	return OrderInfo{}, fmt.Errorf("order with following params %v not found in response for open orders", params)
+	return OrderInfo{}, fmt.Errorf(
+		"order with following params %v not found in response for open orders",
+		params,
+	)
 }
 
-func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (int, int, error) {
+func (ba *Adapter) fetchPrecisionFromAPI(
+	ctx context.Context,
+	symbol string,
+) (float64, float64, error) {
 	params := map[string]interface{}{
 		"symbol":   symbol,
 		"category": "spot",
@@ -579,7 +711,11 @@ func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (in
 		return 0, 0, fmt.Errorf("API request failed: %w", err)
 	}
 	if response.RetCode != 0 {
-		return 0, 0, fmt.Errorf("API error. Code: %d, Message: %s", response.RetCode, response.RetMsg)
+		return 0, 0, fmt.Errorf(
+			"API error. Code: %d, Message: %s",
+			response.RetCode,
+			response.RetMsg,
+		)
 	}
 	// Unmarshal Result into InstrumentResult
 	var instrumentResult InstrumentResult
@@ -596,13 +732,16 @@ func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (in
 	for _, entry := range instrumentResult.List {
 		if entry.Symbol == symbol {
 			// Calculate precision for Qty
-			qtyPrec, err := numutils.CalculatePrecision(entry.LotSizeFilter.BasePrecision)
+			qtyPrec, err := strconv.ParseFloat(
+				strings.TrimSpace(entry.LotSizeFilter.BasePrecision),
+				64,
+			)
 			if err != nil {
 				return 0, 0, fmt.Errorf("invalid basePrecision format: %w", err)
 			}
 
 			// Calculate precision for Price
-			pricePrec, err := numutils.CalculatePrecision(entry.PriceFilter.TickSize)
+			pricePrec, err := strconv.ParseFloat(strings.TrimSpace(entry.PriceFilter.TickSize), 64)
 			if err != nil {
 				return 0, 0, fmt.Errorf("invalid tickSize format: %w", err)
 			}
@@ -612,4 +751,14 @@ func (ba *Adapter) fetchPrecisionFromAPI(ctx context.Context, symbol string) (in
 	}
 
 	return 0, 0, fmt.Errorf("symbol %s not found in response", symbol)
+}
+
+// removeUSDTSuffix removes the "USDT" suffix from the symbol if present.
+// If the symbol doesn't end with "USDT", it returns the symbol unchanged.
+func removeUSDTSuffix(symbol string) string {
+	const suffix = "USDT"
+	if strings.HasSuffix(symbol, suffix) {
+		return strings.TrimSuffix(symbol, suffix)
+	}
+	return symbol
 }

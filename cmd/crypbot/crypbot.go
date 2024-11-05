@@ -1,16 +1,17 @@
+// Package main is where application starts
 package main
 
 import (
 	"context"
+	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/broker_api/bybit"
-	"github.com/nihadazimli/crypbot/internal/config"
 	"github.com/nihadazimli/crypbot/internal/financial"
-	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/internal/trader"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -27,23 +28,51 @@ func main() {
 
 	cfg := config.GetConfig()
 
-	klineReceived := make(chan model.WSInternalKline)
 	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
-	bybitClient := bybitAPI.NewBybitHttpClient(cfg.Broker.API.Key, cfg.Broker.API.Secret, bybitAPI.WithBaseURL(bybitAPI.TESTNET))
-	bybitAdapter := &bybit.BybitAdapter{HTTPClient: bybitClient}
+	bybitAdapter := bybit.NewBybitAdapter()
 
-	go websocket.Serve(cfg, klineReceived)
+	//params := broker_api.SellOrderRequestParams{Symbol: "BTCUSDT", LimitPrice: 70000, OrderAmount: 0.000110}
+	//order, err := bybitAdapter.PlaceSellOrder(ctx, params)
+	//if err != nil {
+	//	fmt.Printf("cannot place order: err: %s", err)
+	//	ctx.Done()
+	//}
+	//orderId, _ := strconv.Atoi(order.Details.OrderId)
+	//fmt.Println(orderId)
 
-	fe := financial.Start(klineReceived, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
+	//paramsCancel := broker_api.CancelOrderRequestParams{OrderId: orderId, Symbol: "BTCUSDT"}
+	//cancelStatus, err := bybitAdapter.CancelOrder(ctx, paramsCancel)
+	//if err != nil {
+	//	fmt.Printf("Cannot cancel sell order. Err: %s", err)
+	//}
+	//fmt.Println(cancelStatus.OrderId)
+
+	fe := financial.Start(ctx, bybitAdapter, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
 	go fe.ProcessKline()
 	go fe.ProcessRSI()
-	go fe.Show()
-
+	//go fe.Show()
+	//
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go tc.ProcessBuySignal(ctx)
+	go tc.ProcessSellSignal(ctx)
+	symbol := "BEAMUSDT"
+
+	time.Sleep(2 * time.Second)
+	buyReady <- symbol
+
+	//sellDetails, err := tc.CalculateSellOrderDetails(ctx, symbol)
+	//if err != nil {
+	//	fmt.Printf("Cannot calculate sell details. Err: %v", err)
+	//}
+	//fmt.Printf("sell details:%v", sellDetails)
+	//order, err := bybitAdapter.PlaceSellOrder(ctx, sellDetails)
+	//if err != nil {
+	//	fmt.Printf("Cannot place sell order. Err: %v", err)
+	//}
+	//fmt.Printf("Order placed successfully. Order id: %s", order.Details.OrderId)
 
 	<-ctx.Done() // Block until context is cancelled
 }
