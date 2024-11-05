@@ -172,7 +172,7 @@ func (ba *Adapter) PlaceBuyOrder(
 		if jsonErr != nil {
 			fmt.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Place Buy Order\nFull response: %s", string(responseJSON))
+			fmt.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s", string(responseJSON), requestParams)
 		}
 		return broker_api.BuyOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -406,7 +406,7 @@ func (ba *Adapter) AmendOrder(
 	}
 
 	if params.Price != nil {
-		price := numutils.RoundDownToPrecision(*params.Price, precision.Qty)
+		price := numutils.RoundDownToPrecision(*params.Price, precision.Price)
 		requestParams["price"] = strconv.FormatFloat(price, 'f', -1, 64)
 	}
 
@@ -416,7 +416,7 @@ func (ba *Adapter) AmendOrder(
 	}
 
 	if params.StopLoss != nil {
-		stopLoss := numutils.RoundDownToPrecision(*params.StopLoss, precision.Qty)
+		stopLoss := numutils.RoundDownToPrecision(*params.StopLoss, precision.Price)
 		requestParams["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
 	}
 
@@ -431,7 +431,7 @@ func (ba *Adapter) AmendOrder(
 		if jsonErr != nil {
 			fmt.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Amend Order\nFull response: %s", string(responseJSON))
+			fmt.Printf("\nError: Amend Order\nFull response: %s\nparams:%s", string(responseJSON), requestParams)
 		}
 		return broker_api.AmendOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",

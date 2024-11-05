@@ -163,7 +163,7 @@ func (tc *Trader) placeFastSellOrder(
 	if err != nil {
 		return orderResult, err
 	}
-	fmt.Println("Sell order placed successfully:", orderResult.Details.OrderId)
+	log.Printf("Sell order placed successfully:%v\n", orderResult.Details.OrderId)
 	return orderResult, nil
 }
 
@@ -176,7 +176,7 @@ func (tc *Trader) placeFastBuyOrder(
 
 	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 	if err != nil {
-		log.Printf("Error calculating buy order details: %v", err)
+		return broker_api.BuyOrderResult{}, fmt.Errorf("Error calculating buy order details: %v\n", err)
 	}
 
 	orderResult, err := tc.broker.PlaceBuyOrder(ctxWithTimeout, orderParams)
@@ -199,23 +199,24 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 			for {
 				select {
 				case <-ctx.Done():
-					fmt.Println("Stopping sell signal checker")
+					log.Println("Stopping sell signal checker")
 					return
 				case <-ticker.C:
 					rsiLive, ok := tc.financial.GetRSILive(symbol)
 					if !ok {
-						fmt.Println("No RSI live for symbol:", symbol)
+						log.Printf("No RSI live for symbol:%s\n", symbol)
 						return
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
-						fmt.Printf("RSI hit the sell value. %s:%.2f", symbol, rsiLive)
+						log.Printf("RSI hit the sell value. %s:%.2f\tCancelling Stop loss order\n", symbol, rsiLive)
+
 						if success := tc.executeSellOrder(ctx, symbol); success {
-							fmt.Printf("Successfully executed sell order for %s", symbol)
+							log.Printf("Successfully executed sell order for %s\n", symbol)
 							delete(tc.activeOrders, symbol)
 							return
 						} else {
-							fmt.Printf("Failed to execute sell order for %s", symbol)
+							log.Printf("Failed to execute sell order for %s\n", symbol)
 						}
 					}
 
@@ -230,20 +231,20 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
 	order, err := tc.placeFastSellOrder(ctx, symbol)
 	if err != nil {
-		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v", symbol, err)
+		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
 	}
 
 	sellTicker := time.NewTicker(tc.getSellOrderCheckDuration())
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Stopping executing sell order")
+			log.Println("Stopping executing sell order")
 		case <-sellTicker.C:
 			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
 
 			if orderStatus == broker_api.NotFound {
 				log.Printf(
-					"Order not found for symbol %s. OrderId: %s",
+					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
 					order.Details.OrderId,
 				)
@@ -402,7 +403,7 @@ func (tc *Trader) CalculateBuyOrderDetails(
 		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 	}
 	orderAmount := (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / limitPrice
-	stopLimit := 0.95 * limitPrice
+	stopLimit := tc.cfg.Trader.StopLossRatio * limitPrice
 
 	return broker_api.BuyOrderRequestParams{
 		Symbol:      symbol,

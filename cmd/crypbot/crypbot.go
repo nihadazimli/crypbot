@@ -58,10 +58,10 @@ func main() {
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go tc.ProcessBuySignal(ctx)
 	go tc.ProcessSellSignal(ctx)
-	symbol := "LINKUSDT"
-	//
+	symbol := "BEAMUSDT"
+
 	time.Sleep(2 * time.Second)
-	sellReady <- symbol
+	buyReady <- symbol
 
 	//sellDetails, err := tc.CalculateSellOrderDetails(ctx, symbol)
 	//if err != nil {

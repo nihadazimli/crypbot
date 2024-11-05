@@ -9,7 +9,7 @@ severity = "warning"
 confidence = 0.8
 
 # Configuration of the `cyclomatic` rule. Here we specify that
-# the rule should fail if it detects code with higher complexity than 10.
+# the rule should fail if it detects code with higher complexity than 15.
 [rule.cyclomatic]
 arguments = [15]
 
