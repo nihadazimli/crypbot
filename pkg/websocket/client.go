@@ -1,3 +1,4 @@
+// Package websocket is client package for interacting with any websocket as client (receiver)
 package websocket
 
 import (
@@ -31,7 +32,12 @@ type WebSocketClient struct {
 
 type MessageHandler func(message []byte) error
 
-func NewWebSocketClientPublic(ctx context.Context, url string, pingInterval int, handler MessageHandler) *WebSocketClient {
+func NewWebSocketClientPublic(
+	ctx context.Context,
+	url string,
+	pingInterval int,
+	handler MessageHandler,
+) *WebSocketClient {
 
 	c := &WebSocketClient{
 		url:          url,
@@ -44,7 +50,14 @@ func NewWebSocketClientPublic(ctx context.Context, url string, pingInterval int,
 	return c
 }
 
-func NewWebSocketClientPrivate(ctx context.Context, url string, apiKey string, apiSecret string, pingInterval int, handler MessageHandler) *WebSocketClient {
+func NewWebSocketClientPrivate(
+	ctx context.Context,
+	url string,
+	apiKey string,
+	apiSecret string,
+	pingInterval int,
+	handler MessageHandler,
+) *WebSocketClient {
 
 	c := &WebSocketClient{
 		url:          url,

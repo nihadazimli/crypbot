@@ -1,3 +1,4 @@
+// Package financial has all logic to calculate every financial data needed for trader for any operation
 package financial
 
 import (
@@ -43,7 +44,14 @@ type Engine struct {
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
-func NewFinancialEngine(cfg *config.Config, broker broker_api.BrokerAPI, klineReceived chan model.WSInternalKline, closedKlineReceived chan string, buyReady chan string, httpTimeoutSec int) *Engine {
+func NewFinancialEngine(
+	cfg *config.Config,
+	broker broker_api.BrokerAPI,
+	klineReceived chan model.WSInternalKline,
+	closedKlineReceived chan string,
+	buyReady chan string,
+	httpTimeoutSec int,
+) *Engine {
 	return &Engine{
 		httpClient:          &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
 		cfg:                 cfg,
@@ -55,7 +63,13 @@ func NewFinancialEngine(cfg *config.Config, broker broker_api.BrokerAPI, klineRe
 	}
 }
 
-func Start(ctx context.Context, broker broker_api.BrokerAPI, closedKlineReceived chan string, buyReady chan string, timeout int) *Engine {
+func Start(
+	ctx context.Context,
+	broker broker_api.BrokerAPI,
+	closedKlineReceived chan string,
+	buyReady chan string,
+	timeout int,
+) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
 
@@ -123,7 +137,10 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 
 	// Append new closed prices and volumes to their respective slices
 	coinMetrics.ClosePriceClosed = append(coinMetrics.ClosePriceClosed, klineDatapoint.Close)
-	coinMetrics.VolumeValueClosed = append(coinMetrics.VolumeValueClosed, klineDatapoint.Close*klineDatapoint.Volume)
+	coinMetrics.VolumeValueClosed = append(
+		coinMetrics.VolumeValueClosed,
+		klineDatapoint.Close*klineDatapoint.Volume,
+	)
 
 	// Ensure the slices do not exceed the defined window size
 	if len(coinMetrics.ClosePriceClosed) > fe.cfg.MarketConstants.MetricsWindowSize {
@@ -180,8 +197,15 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error)
 		return 0, fmt.Errorf("insufficient data to calculate RSI for symbol: %s", symbol)
 	}
 
-	rsi := calculateRSI(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.KlineInterval-1) //To get only latest RSI
-	volumeValueMedian := findMedian(coinMetrics.VolumeValueClosed) * float64(fe.cfg.MarketConstants.MetricsWindowSize)
+	rsi := calculateRSI(
+		coinMetrics.ClosePriceClosed,
+		fe.cfg.MarketConstants.KlineInterval-1,
+	) //To get only latest RSI
+	volumeValueMedian := findMedian(
+		coinMetrics.VolumeValueClosed,
+	) * float64(
+		fe.cfg.MarketConstants.MetricsWindowSize,
+	)
 
 	fe.Coins[symbol].RSIClosed = rsi
 	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
@@ -256,7 +280,10 @@ func (fe *Engine) initClosedCoinMetrics(symbol string, n int) (*model.CoinMetric
 
 func (fe *Engine) loadRecentKlineData() {
 	for _, symbol := range fe.cfg.Symbols {
-		coinMetrics, err := fe.initClosedCoinMetrics(symbol, fe.cfg.MarketConstants.MetricsWindowSize)
+		coinMetrics, err := fe.initClosedCoinMetrics(
+			symbol,
+			fe.cfg.MarketConstants.MetricsWindowSize,
+		)
 
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
@@ -290,7 +317,13 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			fmt.Printf("coin: %s live: %.2f closed: %.2f volume: %.2f\n", symbol, metrics.RSILive, metrics.RSIClosed, metrics.VolumeValueMedian)
+			fmt.Printf(
+				"coin: %s live: %.2f closed: %.2f volume: %.2f\n",
+				symbol,
+				metrics.RSILive,
+				metrics.RSIClosed,
+				metrics.VolumeValueMedian,
+			)
 		}
 
 		mapMutex.Unlock()
