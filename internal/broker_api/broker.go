@@ -13,6 +13,7 @@ type BrokerAPI interface {
 	GetAccountBalance(ctx context.Context) (AccountBalanceResult, error)
 	AmendOrder(ctx context.Context, params AmendOrderRequestParams) (AmendOrderResult, error)
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
+	CancelAllTPSLOrders(ctx context.Context, symbol string) error
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
 	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
