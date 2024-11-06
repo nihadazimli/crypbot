@@ -346,6 +346,28 @@ func (ba *Adapter) PlaceSellOrder(
 	}, nil
 }
 
+func (ba *Adapter) CancelAllTPSLOrders(ctx context.Context, symbol string) error {
+	requestParams := map[string]interface{}{
+		"category":    "spot",
+		"symbol":      symbol,
+		"orderFilter": "tpslOrder",
+	}
+	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelAllOrders(ctx)
+	if err != nil {
+		return fmt.Errorf("Cannot cancel order. Err: %s\n", err)
+	}
+	// Check if the response indicates success
+	if response.RetCode != 0 {
+		responseJSON, jsonErr := json.Marshal(response)
+		if jsonErr != nil {
+			return fmt.Errorf("error marshalling full response: %s\n", jsonErr)
+		} else {
+			return fmt.Errorf("Error: Place Sell Order\nFull response: %s", string(responseJSON))
+		}
+	}
+	return nil
+}
+
 func (ba *Adapter) CancelOrder(
 	ctx context.Context,
 	params broker_api.CancelOrderRequestParams,
@@ -664,8 +686,7 @@ func (ba *Adapter) getOpenOrder(
 		queryParams["symbol"] = params.Symbol
 	}
 
-	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).
-		GetOpenOrders(ctx)
+	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
 	if err != nil {
 		return OrderInfo{}, err
 	}

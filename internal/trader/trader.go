@@ -104,6 +104,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 					log.Printf("Cannot cancel order! PANIC!. Err: %v\n", err)
 					return
 				}
+				//TODO: Check from websocket if order is cancelled
 				log.Printf("Order %s cancelled successfully!\n", cancelOrder.OrderId)
 				return
 			}
@@ -209,8 +210,16 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					}
 
 					if rsiLive >= tc.getRSISellValue() {
-						log.Printf("RSI hit the sell value. %s:%.2f\tCancelling Stop loss order\n", symbol, rsiLive)
-
+						log.Printf("RSI hit the sell value. %s:%.2f\n", symbol, rsiLive)
+						err := tc.broker.CancelAllTPSLOrders(ctx, symbol)
+						if err != nil {
+							fmt.Printf(
+								"Cannot cancel order for %s, will retry after %v duration. Err:%v",
+								symbol,
+								tc.getSellCheckIntervalDuration(),
+								err,
+							)
+						}
 						if success := tc.executeSellOrder(ctx, symbol); success {
 							log.Printf("Successfully executed sell order for %s\n", symbol)
 							delete(tc.activeOrders, symbol)
