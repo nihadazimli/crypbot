@@ -544,19 +544,27 @@ func (ba *Adapter) StartKlineStream(
 	ctx context.Context,
 	params broker_api.KlineStreamRequestParams,
 ) error {
-	ws := websocket.NewWebSocketClientPublic(
-		ctx,
-		ba.cfg.Broker.WebSocket.AddressPublic,
-		ba.cfg.Broker.WebSocket.PingInterval,
-		ba.handleKlineMessages,
-	)
-	ba.klineWriteChan = params.KlineWriteChan
+	symbolChunks := chunkSymbols(params.Symbols, ba.cfg.Broker.WebSocket.MaxSymbolsPerConnection)
+	var webSockets []*websocket.WebSocketClient
 
-	err := ws.ConnectAndStart(params.Symbols)
-	if err != nil {
-		return err
+	for _, chunk := range symbolChunks {
+		ws := websocket.NewWebSocketClientPublic(
+			ctx,
+			ba.cfg.Broker.WebSocket.AddressPublic,
+			ba.cfg.Broker.WebSocket.PingInterval,
+			ba.handleKlineMessages,
+		)
+		ba.klineWriteChan = params.KlineWriteChan
+
+		err := ws.ConnectAndStart(chunk)
+		if err != nil {
+			for _, ws := range webSockets {
+				ws.Shutdown()
+			}
+			return err
+		}
+		webSockets = append(webSockets, ws)
 	}
-
 	return nil
 }
 
@@ -837,4 +845,19 @@ func removeUSDTSuffix(symbol string) string {
 func parseOrderStatus(status string) (broker_api.OrderStatus, bool) {
 	enumStatus, ok := orderStatusMap[status]
 	return enumStatus, ok
+}
+
+func chunkSymbols(symbols []string, chunkSize int) [][]string {
+	var allChunks [][]string
+
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+
+		allChunks = append(allChunks, symbols[i:end])
+	}
+
+	return allChunks
 }
