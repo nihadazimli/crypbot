@@ -8,10 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/nihadazimli/crypbot/internal/model"
 	"log"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/nihadazimli/crypbot/internal/model"
 
 	"github.com/gorilla/websocket"
 )

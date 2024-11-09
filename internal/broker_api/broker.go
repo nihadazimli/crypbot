@@ -3,6 +3,8 @@ package broker_api
 
 import (
 	"context"
+	"errors"
+
 	"github.com/nihadazimli/crypbot/internal/model"
 )
 
@@ -16,7 +18,7 @@ type BrokerAPI interface {
 	CancelAllTPSLOrders(ctx context.Context, symbol string) error
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
-	GetOrderStatus(ctx context.Context, orderId string) OrderStatus
+	GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error)
 	GetRemainingQtyForPartialOrder(
 		ctx context.Context,
 		params OpenOrderRequestParams,
@@ -107,12 +109,12 @@ type AmendOrderResult struct {
 type OrderStatus int
 
 const (
-	Pending OrderStatus = iota
+	Invalid OrderStatus = iota
 	Filled
 	PartiallyFilled
 	Canceled
-	Failed
-	NotFound
+	Open
+	PartiallyFilledCancelled
 )
 
 type ActiveOrderTracker struct {
@@ -124,3 +126,7 @@ type OpenOrderRequestParams struct {
 	OrderId string
 	Symbol  string
 }
+
+var (
+	ErrQuantityTooLow = errors.New("quantity below minimum required")
+)
