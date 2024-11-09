@@ -5,9 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/broker_api"
-	"github.com/nihadazimli/crypbot/internal/model"
 	"io"
 	"log"
 	"net/http"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/broker_api"
+	"github.com/nihadazimli/crypbot/internal/model"
 )
 
 var (

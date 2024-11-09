@@ -2,10 +2,11 @@ package trader
 
 import (
 	"context"
-	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/financial"
 	"testing"
 	"time"
+
+	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/financial"
 
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/stretchr/testify/assert"

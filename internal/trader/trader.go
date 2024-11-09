@@ -3,11 +3,13 @@ package trader
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/financial"
 	"log"
 	"time"
+
+	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/financial"
 
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/pkg/numutils"
@@ -78,16 +80,17 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		case <-ctx.Done():
 			log.Printf("Context cancelled while monitoring buy order. Symbol: %s\n", symbol)
 		case <-ticker.C:
-			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
-
-			if orderStatus == broker_api.NotFound {
+			orderStatus, err := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
+			if err != nil {
 				log.Printf(
 					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
 					order.Details.OrderId,
 				)
 				continue
-			} else if orderStatus == broker_api.Filled {
+			}
+
+			if orderStatus == broker_api.Filled || orderStatus == broker_api.PartiallyFilledCancelled {
 				log.Printf("Order filled for %s\n", symbol)
 				tc.sellReady <- symbol
 				return
@@ -113,6 +116,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
 				log.Printf("Buy details can't be calculated. Err: %s\n", err)
+				continue
 			}
 
 			if orderStatus == broker_api.PartiallyFilled {
@@ -138,7 +142,19 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)
 			if err != nil {
-				log.Printf("Cannot Amend Order. Err: %s\n", err)
+				if errors.Is(err, broker_api.ErrQuantityTooLow) {
+					cancelParams := broker_api.CancelOrderRequestParams{OrderId: order.OrderId, Symbol: symbol}
+					_, err := tc.broker.CancelOrder(ctx, cancelParams)
+					if err != nil {
+						log.Printf("Trader - Cannot cancel order! Err: %v\n", err)
+					}
+					log.Printf(
+						"Tradar - Partially Filled order id %s cancelled due to low remaining qtyt\n",
+						order.OrderId,
+					)
+				} else {
+					log.Printf("Trader - Cannot Amend Order. Unhandled err: %s\n", err)
+				}
 				continue
 			}
 
@@ -249,16 +265,18 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 		case <-ctx.Done():
 			log.Println("Stopping executing sell order")
 		case <-sellTicker.C:
-			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
+			orderStatus, err := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
 
-			if orderStatus == broker_api.NotFound {
+			if err != nil {
 				log.Printf(
 					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
 					order.Details.OrderId,
 				)
 				continue
-			} else if orderStatus == broker_api.Filled {
+			}
+
+			if orderStatus == broker_api.Filled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				tc.sellReady <- symbol
 				return true

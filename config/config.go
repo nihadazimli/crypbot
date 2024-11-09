@@ -35,10 +35,11 @@ type APIConfig struct {
 }
 
 type WebSocketConfig struct {
-	AddressPublic   string `yaml:"address_public"`
-	AddressPrivate  string `yaml:"address_private"`
-	PingInterval    int    `yaml:"ping_interval"`
-	MonitorInterval int    `yaml:"monitor_interval"`
+	AddressPublic           string `yaml:"address_public"`
+	AddressPrivate          string `yaml:"address_private"`
+	PingInterval            int    `yaml:"ping_interval"`
+	MonitorInterval         int    `yaml:"monitor_interval"`
+	MaxSymbolsPerConnection int    `yaml:"max_symbols_per_connection"`
 }
 
 type RequestPathsConfig struct {

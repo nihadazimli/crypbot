@@ -5,33 +5,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"sync"
+
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/pkg/numutils"
 	"github.com/nihadazimli/crypbot/pkg/websocket"
 	bybit "github.com/wuhewuhe/bybit.go.api"
-	"log"
-	"strconv"
-	"strings"
-	"sync"
 )
 
 type OrderInfoResult struct {
 	List []struct {
-		OrderId   string `json:"orderId"`
-		Price     string `json:"price"`
-		Qty       string `json:"qty"`
-		LeavesQty string `json:"leavesQty"`
-		Symbol    string `json:"symbol"`
+		OrderId     string `json:"orderId"`
+		Price       string `json:"price"`
+		Qty         string `json:"qty"`
+		LeavesQty   string `json:"leavesQty"`
+		Symbol      string `json:"symbol"`
+		OrderStatus string `json:"orderStatus"`
 	}
 }
 type OrderInfo struct {
-	OrderId   string `json:"orderId"`
-	Price     string `json:"price"`
-	Qty       string `json:"qty"`
-	LeavesQty string `json:"leavesQty"`
-	Symbol    string `json:"symbol"`
+	OrderId   string
+	Price     string
+	Qty       string
+	LeavesQty string
+	Symbol    string
+	Status    broker_api.OrderStatus
 }
 
 type InstrumentResult struct {
@@ -65,6 +68,22 @@ type OrderBookResponse struct {
 	Timestamp int64            `json:"ts"`
 	UpdateID  int64            `json:"u"`
 }
+
+var orderStatusMap = map[string]broker_api.OrderStatus{
+	"Filled":                  broker_api.Filled,
+	"Cancelled":               broker_api.Canceled,
+	"Rejected":                broker_api.Canceled,
+	"PartiallyFilled":         broker_api.PartiallyFilled,
+	"Untriggered":             broker_api.Open,
+	"New":                     broker_api.Open,
+	"Triggered":               broker_api.Open,
+	"Deactivated":             broker_api.Canceled,
+	"PartiallyFilledCanceled": broker_api.PartiallyFilledCancelled,
+}
+
+const (
+	ErrCodeQuantityTooLow = 170136
+)
 
 type Adapter struct {
 	HTTPClient     *bybit.Client
@@ -448,7 +467,9 @@ func (ba *Adapter) AmendOrder(
 		return broker_api.AmendOrderResult{}, err
 	}
 
-	if response.RetCode != 0 {
+	if response.RetCode == ErrCodeQuantityTooLow { // Use the constant here
+		return broker_api.AmendOrderResult{}, fmt.Errorf("order quantity too low: %w", broker_api.ErrQuantityTooLow)
+	} else if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
@@ -478,11 +499,20 @@ func (ba *Adapter) AmendOrder(
 	return details, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) broker_api.OrderStatus {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
 	if order, exists := ba.activeOrders[orderId]; exists {
-		return order.Status
+		return order.Status, nil
 	}
-	return broker_api.NotFound
+
+	openOrderParams := broker_api.OpenOrderRequestParams{OrderId: orderId}
+	order, err := ba.getOpenOrder(ctx, openOrderParams)
+
+	if err != nil {
+		return broker_api.Invalid, err
+	}
+
+	return order.Status, nil
+
 }
 
 func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
@@ -514,19 +544,27 @@ func (ba *Adapter) StartKlineStream(
 	ctx context.Context,
 	params broker_api.KlineStreamRequestParams,
 ) error {
-	ws := websocket.NewWebSocketClientPublic(
-		ctx,
-		ba.cfg.Broker.WebSocket.AddressPublic,
-		ba.cfg.Broker.WebSocket.PingInterval,
-		ba.handleKlineMessages,
-	)
-	ba.klineWriteChan = params.KlineWriteChan
+	symbolChunks := chunkSymbols(params.Symbols, ba.cfg.Broker.WebSocket.MaxSymbolsPerConnection)
+	var webSockets []*websocket.WebSocketClient
 
-	err := ws.ConnectAndStart(params.Symbols)
-	if err != nil {
-		return err
+	for _, chunk := range symbolChunks {
+		ws := websocket.NewWebSocketClientPublic(
+			ctx,
+			ba.cfg.Broker.WebSocket.AddressPublic,
+			ba.cfg.Broker.WebSocket.PingInterval,
+			ba.handleKlineMessages,
+		)
+		ba.klineWriteChan = params.KlineWriteChan
+
+		err := ws.ConnectAndStart(chunk)
+		if err != nil {
+			for _, ws := range webSockets {
+				ws.Shutdown()
+			}
+			return err
+		}
+		webSockets = append(webSockets, ws)
 	}
-
 	return nil
 }
 
@@ -624,19 +662,23 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 
 	for _, order := range orders {
 		var orderState broker_api.ActiveOrderTracker
-		if order.OrderStatus == "Filled" {
-			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Filled}
-		} else if order.OrderStatus == "New" {
-			orderState = broker_api.ActiveOrderTracker{Status: broker_api.Pending}
-		} else if order.OrderStatus == "PartiallyFilled" {
+
+		orderStatus, ok := parseOrderStatus(order.OrderStatus)
+
+		if !ok {
+			return fmt.Errorf("bybit adapter - Unhandled Order Status. Status: %s", order.OrderStatus)
+		}
+
+		if orderStatus == broker_api.PartiallyFilled {
 			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
 			if err != nil {
-				return err
+				return fmt.Errorf("bybit adapter - Err: %v", err)
 			}
 			orderState = broker_api.ActiveOrderTracker{Status: broker_api.PartiallyFilled, RemainingQty: remainingQty}
+		} else {
+			orderState = broker_api.ActiveOrderTracker{Status: orderStatus}
 		}
 		ba.activeOrders[order.OrderID] = orderState
-
 	}
 	return nil
 }
@@ -663,6 +705,11 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 		)
 	}
 
+	//add to existing local map before return
+	ba.activeOrders[params.OrderId] = broker_api.ActiveOrderTracker{
+		Status:       broker_api.PartiallyFilled,
+		RemainingQty: remainingQty,
+	}
 	return remainingQty, nil
 }
 
@@ -673,6 +720,7 @@ func (ba *Adapter) GetOpenOrder(
 	return ba.getOpenOrder(ctx, params)
 }
 
+// getOpenOrder fetches open order details from /v5/order/realtime endpoint of Bybit
 func (ba *Adapter) getOpenOrder(
 	ctx context.Context,
 	params broker_api.OpenOrderRequestParams,
@@ -703,12 +751,21 @@ func (ba *Adapter) getOpenOrder(
 
 	for _, entry := range orderInfoResult.List {
 		if entry.OrderId == params.OrderId || entry.Symbol == params.Symbol {
+			orderStatus, ok := parseOrderStatus(entry.OrderStatus)
+			if !ok {
+				return OrderInfo{}, fmt.Errorf(
+					"bybit adapter - get_open_order - Cannot parse unknown order status. Status: %s",
+					entry.OrderStatus,
+				)
+			}
+
 			return OrderInfo{
 				OrderId:   entry.OrderId,
 				Symbol:    entry.Symbol,
 				Price:     entry.Price,
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
+				Status:    orderStatus,
 			}, nil
 		}
 	}
@@ -782,4 +839,25 @@ func removeUSDTSuffix(symbol string) string {
 		return strings.TrimSuffix(symbol, suffix)
 	}
 	return symbol
+}
+
+// parseOrderStatus converts api response to OrderStatus map
+func parseOrderStatus(status string) (broker_api.OrderStatus, bool) {
+	enumStatus, ok := orderStatusMap[status]
+	return enumStatus, ok
+}
+
+func chunkSymbols(symbols []string, chunkSize int) [][]string {
+	var allChunks [][]string
+
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+
+		allChunks = append(allChunks, symbols[i:end])
+	}
+
+	return allChunks
 }
