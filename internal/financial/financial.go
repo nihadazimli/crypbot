@@ -80,7 +80,7 @@ func Start(
 		Symbols: cfg.KlineTopics, KlineWriteChan: klineReceived,
 	})
 	if err != nil {
-		log.Printf("Cannot start KlineStream. Err: %v", err)
+		log.Printf("Cannot start KlineStream. Err: %v\n", err)
 	}
 	return fe
 }

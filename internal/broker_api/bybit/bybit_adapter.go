@@ -172,7 +172,7 @@ func (ba *Adapter) PlaceBuyOrder(
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			log.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s", string(responseJSON), requestParams)
+			log.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s\n", string(responseJSON), requestParams)
 		}
 		return broker_api.BuyOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -231,7 +231,7 @@ func (ba *Adapter) GetOrderBook(
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			log.Printf("Error: Get Order Book\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Get Order Book\nFull response: %s\n", string(responseJSON))
 		}
 		return broker_api.OrderBookResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -313,7 +313,7 @@ func (ba *Adapter) PlaceSellOrder(
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			log.Printf("Error: Place Sell Order\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Place Sell Order\nFull response: %s\n", string(responseJSON))
 		}
 		return broker_api.SellOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -389,7 +389,7 @@ func (ba *Adapter) CancelOrder(
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			log.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Cancel Order\nFull response: %s\n", string(responseJSON))
 		}
 		return broker_api.CancelOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -453,7 +453,7 @@ func (ba *Adapter) AmendOrder(
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			log.Printf("\nError: Amend Order\nFull response: %s\nparams:%s", string(responseJSON), requestParams)
+			log.Printf("\nError: Amend Order\nFull response: %s\nparams:%s\n", string(responseJSON), requestParams)
 		}
 		return broker_api.AmendOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",

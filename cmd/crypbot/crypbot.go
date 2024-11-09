@@ -37,7 +37,7 @@ func main() {
 	//params := broker_api.SellOrderRequestParams{Symbol: "BTCUSDT", LimitPrice: 70000, OrderAmount: 0.000110}
 	//order, err := bybitAdapter.PlaceSellOrder(ctx, params)
 	//if err != nil {
-	//	log.Printf("cannot place order: err: %s", err)
+	//	log.Printf("cannot place order: err: %s\n", err)
 	//	ctx.Done()
 	//}
 	//orderId, _ := strconv.Atoi(order.Details.OrderId)
@@ -46,7 +46,7 @@ func main() {
 	//paramsCancel := broker_api.CancelOrderRequestParams{OrderId: orderId, Symbol: "BTCUSDT"}
 	//cancelStatus, err := bybitAdapter.CancelOrder(ctx, paramsCancel)
 	//if err != nil {
-	//	log.Printf("Cannot cancel sell order. Err: %s", err)
+	//	log.Printf("Cannot cancel sell order. Err: %s\n", err)
 	//}
 	//log.Println(cancelStatus.OrderId)
 
@@ -65,14 +65,14 @@ func main() {
 
 	//sellDetails, err := tc.CalculateSellOrderDetails(ctx, symbol)
 	//if err != nil {
-	//	log.Printf("Cannot calculate sell details. Err: %v", err)
+	//	log.Printf("Cannot calculate sell details. Err: %v\n", err)
 	//}
-	//log.Printf("sell details:%v", sellDetails)
+	//log.Printf("sell details:%v\n", sellDetails)
 	//order, err := bybitAdapter.PlaceSellOrder(ctx, sellDetails)
 	//if err != nil {
-	//	log.Printf("Cannot place sell order. Err: %v", err)
+	//	log.Printf("Cannot place sell order. Err: %v\n", err)
 	//}
-	//log.Printf("Order placed successfully. Order id: %s", order.Details.OrderId)
+	//log.Printf("Order placed successfully. Order id: %s\n", order.Details.OrderId)
 
 	<-ctx.Done() // Block until context is cancelled
 }

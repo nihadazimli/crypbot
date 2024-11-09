@@ -77,14 +77,14 @@ func (c *WebSocketClient) ConnectAndStart(topics []string) error {
 	c.conn, _, err = websocket.DefaultDialer.Dial(c.url, nil)
 
 	if err != nil {
-		log.Printf("Failed to dial:%v", err)
+		log.Printf("Failed to dial:%v\n", err)
 		c.isConnected = false
 		return err
 	}
 
 	if c.isPrivate {
 		if err := c.setupPrivateConnection(); err != nil {
-			log.Printf("Authentication could not be completed. Err:%v", err)
+			log.Printf("Authentication could not be completed. Err:%v\n", err)
 			return err
 		}
 	}
@@ -108,10 +108,10 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 		select {
 		case <-ticker.C:
 			if !c.isConnected {
-				log.Printf("Attempting to reconnect for %s...", c.url)
+				log.Printf("Attempting to reconnect for %s...\n", c.url)
 				err := c.ConnectAndStart(topics)
 				if err != nil {
-					log.Printf("Cannot reconnect to web socket...")
+					log.Println("Cannot reconnect to web socket...")
 				}
 				return
 
@@ -139,7 +139,7 @@ func (c *WebSocketClient) subscribe(topic []string) {
 	}
 	err := c.sendMessage(subscribeRequest)
 	if err != nil {
-		log.Printf("Cannot subsribe. Err: %v", err)
+		log.Printf("Cannot subsribe. Err: %v\n", err)
 	}
 }
 

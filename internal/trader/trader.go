@@ -60,14 +60,14 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 
 	if !tc.buyConditionsMet(symbol) {
-		log.Printf("Buy Conditions are not met! :(")
+		log.Println("Buy conditions are not met! :(")
 		return
 	}
 
 	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
-		log.Printf("Cannot Place buy order.\nSymbol: %s\nError:%v", symbol, err)
+		log.Printf("Cannot place buy order.\nSymbol: %s\nError:%v\n", symbol, err)
 	}
 
 	ticker := time.NewTicker(tc.getBuyCheckIntervalDuration())
@@ -76,25 +76,25 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Context cancelled while monitoring buy order. Symbol: %s", symbol)
+			log.Printf("Context cancelled while monitoring buy order. Symbol: %s\n", symbol)
 		case <-ticker.C:
 			orderStatus := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
 
 			if orderStatus == broker_api.NotFound {
 				log.Printf(
-					"Order not found for symbol %s. OrderId: %s",
+					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
 					order.Details.OrderId,
 				)
 				continue
 			} else if orderStatus == broker_api.Filled {
-				log.Printf("Order filled for %s", symbol)
+				log.Printf("Order filled for %s\n", symbol)
 				tc.sellReady <- symbol
 				return
 			}
 
 			if !tc.buyConditionsMet(symbol) {
-				log.Printf("Buy Conditions are not met!\nCancelling current order! :(")
+				log.Println("Buy Conditions are not met! Cancelling current order! :(")
 				params := broker_api.CancelOrderRequestParams{
 					OrderId: order.Details.OrderId,
 					Symbol:  symbol,
@@ -112,7 +112,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			// For the rest of the states we need to create buy order
 			orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
 			if err != nil {
-				log.Printf("Buy details can't be calculated. Err: %s", err)
+				log.Printf("Buy details can't be calculated. Err: %s\n", err)
 			}
 
 			if orderStatus == broker_api.PartiallyFilled {
@@ -138,11 +138,11 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)
 			if err != nil {
-				log.Printf("Cannot Amend Order. Err: %s", err)
+				log.Printf("Cannot Amend Order. Err: %s\n", err)
 				continue
 			}
 
-			log.Printf("Order Id %s is amended successfully", order.OrderId)
+			log.Printf("Order Id %s is amended successfully\n", order.OrderId)
 
 		}
 	}
@@ -157,7 +157,7 @@ func (tc *Trader) placeFastSellOrder(
 
 	orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
 	if err != nil {
-		log.Printf("Error calculating sell order details: %v", err)
+		log.Printf("Error calculating sell order details: %v\n", err)
 	}
 
 	orderResult, err := tc.broker.PlaceSellOrder(ctxWithTimeout, orderParams)
@@ -259,14 +259,14 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				)
 				continue
 			} else if orderStatus == broker_api.Filled {
-				log.Printf("Sell order filled for %s", symbol)
+				log.Printf("Sell order filled for %s\n", symbol)
 				tc.sellReady <- symbol
 				return true
 			}
 
 			orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
 			if err != nil {
-				log.Printf("Error calculating sell order details: %v", err)
+				log.Printf("Error calculating sell order details: %v\n", err)
 				continue
 			}
 
@@ -291,10 +291,10 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)
 			if err != nil {
-				log.Printf("Cannot Amend Order. Err: %s", err)
+				log.Printf("Cannot Amend Order. Err: %s\n", err)
 				continue
 			}
-			log.Printf("Order Id %s is amended successfully", order.OrderId)
+			log.Printf("Order Id %s is amended successfully\n", order.OrderId)
 
 		}
 	}
@@ -303,28 +303,28 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 func (tc *Trader) buyConditionsMet(symbol string) bool {
 	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
-		log.Printf("No RSI data available for %s", symbol)
+		log.Printf("No RSI data available for %s\n", symbol)
 		return false
 	}
 
 	volumeMedian, volumeOk := tc.financial.GetVolumeValueMedian(symbol)
 	if !volumeOk {
-		log.Printf("No volume data available for %s", symbol)
+		log.Printf("No volume data available for %s\n", symbol)
 		return false
 	}
 
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
-		log.Printf("RSILive too big")
+		log.Println("RSILive too big")
 		return false
 	}
 	_, exists := tc.activeOrders[symbol]
 	if exists {
-		log.Printf("Already has position for %s", symbol)
+		log.Printf("Already has position for %s\n", symbol)
 		return false
 	}
 
 	if volumeMedian < tc.cfg.Trader.MedianVolumeThreshold {
-		log.Printf("Median Volume below threshold")
+		log.Println("Median Volume below threshold")
 		return false
 	}
 
