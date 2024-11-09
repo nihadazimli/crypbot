@@ -179,7 +179,7 @@ func (c *WebSocketClient) setupPrivateConnection() error {
 
 	// Convert to hexadecimal instead of base64
 	signature := hex.EncodeToString(h.Sum(nil))
-	fmt.Println("signature generated : " + signature)
+	log.Println("signature generated : " + signature)
 
 	authMessage := map[string]interface{}{
 		"req_id": uuid.New(),

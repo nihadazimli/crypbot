@@ -184,13 +184,13 @@ func (tc *Trader) placeFastBuyOrder(
 	if err != nil {
 		return orderResult, err
 	}
-	fmt.Println("Buy order placed successfully:", orderResult.Details.OrderId)
+	log.Println("Buy order placed successfully:", orderResult.Details.OrderId)
 	return orderResult, nil
 }
 
 func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 	for symbol := range tc.sellReady {
-		fmt.Println("Sell signal received for", symbol)
+		log.Println("Sell signal received for", symbol)
 
 		go func(symbol string) {
 
@@ -213,7 +213,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 						log.Printf("RSI hit the sell value. %s:%.2f\n", symbol, rsiLive)
 						err := tc.broker.CancelAllTPSLOrders(ctx, symbol)
 						if err != nil {
-							fmt.Printf(
+							log.Printf(
 								"Cannot cancel order for %s, will retry after %v duration. Err:%v",
 								symbol,
 								tc.getSellCheckIntervalDuration(),
@@ -266,7 +266,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
 			orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
 			if err != nil {
-				fmt.Printf("Error calculating sell order details: %v", err)
+				log.Printf("Error calculating sell order details: %v", err)
 				continue
 			}
 

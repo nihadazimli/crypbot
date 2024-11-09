@@ -170,9 +170,9 @@ func (ba *Adapter) PlaceBuyOrder(
 	if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
-			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s", string(responseJSON), requestParams)
+			log.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s", string(responseJSON), requestParams)
 		}
 		return broker_api.BuyOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -229,9 +229,9 @@ func (ba *Adapter) GetOrderBook(
 	if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
-			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Get Order Book\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Get Order Book\nFull response: %s", string(responseJSON))
 		}
 		return broker_api.OrderBookResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -290,7 +290,7 @@ func (ba *Adapter) PlaceSellOrder(
 	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
 	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
 
-	fmt.Printf("params: %v\n", params)
+	log.Printf("params: %v\n", params)
 	requestParams := map[string]interface{}{
 		"category":  "spot",
 		"symbol":    params.Symbol,
@@ -300,7 +300,7 @@ func (ba *Adapter) PlaceSellOrder(
 		"price":     strconv.FormatFloat(limitPrice, 'f', -1, 64),
 	}
 
-	fmt.Printf("request params: %v\n", requestParams)
+	log.Printf("request params: %v\n", requestParams)
 	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -311,9 +311,9 @@ func (ba *Adapter) PlaceSellOrder(
 	if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
-			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Place Sell Order\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Place Sell Order\nFull response: %s", string(responseJSON))
 		}
 		return broker_api.SellOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -387,9 +387,9 @@ func (ba *Adapter) CancelOrder(
 	if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
-			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
+			log.Printf("Error: Cancel Order\nFull response: %s", string(responseJSON))
 		}
 		return broker_api.CancelOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -451,9 +451,9 @@ func (ba *Adapter) AmendOrder(
 	if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
-			fmt.Printf("error marshalling full response: %s\n", jsonErr)
+			log.Printf("error marshalling full response: %s\n", jsonErr)
 		} else {
-			fmt.Printf("\nError: Amend Order\nFull response: %s\nparams:%s", string(responseJSON), requestParams)
+			log.Printf("\nError: Amend Order\nFull response: %s\nparams:%s", string(responseJSON), requestParams)
 		}
 		return broker_api.AmendOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
@@ -572,7 +572,7 @@ func (ba *Adapter) startOrderStream(ctx context.Context) error {
 }
 
 func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
-	fmt.Printf("Received Private Stream Message: %s\n", string(message))
+	log.Printf("Received Private Stream Message: %s\n", string(message))
 	var privateMessage model.BybitWSPrivateMessage
 	err := json.Unmarshal(message, &privateMessage)
 	if err != nil {
