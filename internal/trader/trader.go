@@ -62,7 +62,7 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 
 	if !tc.buyConditionsMet(symbol) {
-		log.Printf("Buy conditions are not met for %s\n! :(", symbol)
+		log.Printf("Buy conditions are not met for %s! :(\n", symbol)
 		return
 	}
 
@@ -93,6 +93,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 
 			if orderStatus == broker_api.Filled || orderStatus == broker_api.PartiallyFilledCancelled {
 				log.Printf("Order filled for %s\n", symbol)
+				tc.activeOrders[symbol] = order.Details.OrderAmount
 				tc.sellReady <- symbol
 				return
 			}
@@ -279,7 +280,6 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
 			if orderStatus == broker_api.Filled {
 				log.Printf("Sell order filled for %s\n", symbol)
-				tc.sellReady <- symbol
 				return true
 			}
 
@@ -320,6 +320,11 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 }
 
 func (tc *Trader) buyConditionsMet(symbol string) bool {
+
+	if len(tc.activeOrders) > 0 {
+		log.Printf("Already has a position. Active orders: %v", tc.activeOrders)
+		return false
+	}
 	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
 		log.Println("No RSI data available")
@@ -338,7 +343,7 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 	}
 	_, exists := tc.activeOrders[symbol]
 	if exists {
-		log.Println("Already has position")
+		log.Println("Already has position for given symbol")
 		return false
 	}
 

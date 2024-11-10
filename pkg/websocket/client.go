@@ -149,6 +149,7 @@ func (c *WebSocketClient) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Failed to read message:", err)
+			c.isConnected = false
 			return
 		}
 		err = c.handler(message)

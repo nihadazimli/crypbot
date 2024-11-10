@@ -621,11 +621,12 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 	case "order":
 		return ba.handleOrderData(privateMessage.Data)
 	default:
-		return fmt.Errorf(
-			"unhandled topic: %s,Data:%s",
+		log.Printf(
+			"unhandled topic: %s,Data:%s\n",
 			privateMessage.Topic,
 			string(privateMessage.Data),
 		)
+		return nil
 	}
 
 }
