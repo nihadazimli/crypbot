@@ -62,14 +62,15 @@ func (tc *Trader) ProcessBuySignal(ctx context.Context) {
 func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 
 	if !tc.buyConditionsMet(symbol) {
-		log.Println("Buy conditions are not met! :(")
+		log.Printf("Buy conditions are not met for %s\n! :(", symbol)
 		return
 	}
 
 	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
-		log.Printf("Cannot place buy order.\nSymbol: %s\nError:%v\n", symbol, err)
+		log.Printf("Cannot place buy order for %s. Err: %v\n", symbol, err)
+		return
 	}
 
 	ticker := time.NewTicker(tc.getBuyCheckIntervalDuration())
@@ -97,7 +98,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			}
 
 			if !tc.buyConditionsMet(symbol) {
-				log.Println("Buy Conditions are not met! Cancelling current order! :(")
+				log.Printf("Buy Conditions are not met for %s! Cancelling current order! :(\n", symbol)
 				params := broker_api.CancelOrderRequestParams{
 					OrderId: order.Details.OrderId,
 					Symbol:  symbol,
@@ -321,13 +322,13 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 func (tc *Trader) buyConditionsMet(symbol string) bool {
 	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
-		log.Printf("No RSI data available for %s\n", symbol)
+		log.Println("No RSI data available")
 		return false
 	}
 
 	volumeMedian, volumeOk := tc.financial.GetVolumeValueMedian(symbol)
 	if !volumeOk {
-		log.Printf("No volume data available for %s\n", symbol)
+		log.Println("No volume data available")
 		return false
 	}
 
@@ -337,7 +338,7 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 	}
 	_, exists := tc.activeOrders[symbol]
 	if exists {
-		log.Printf("Already has position for %s\n", symbol)
+		log.Println("Already has position")
 		return false
 	}
 

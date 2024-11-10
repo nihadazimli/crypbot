@@ -318,8 +318,8 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			log.Printf(
-				"coin: %s live: %.2f closed: %.2f volume: %.2f\n",
+			fmt.Printf(
+				"%s L: %.2f C: %.2f V: %.2f\n",
 				symbol,
 				metrics.RSILive,
 				metrics.RSIClosed,

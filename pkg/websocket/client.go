@@ -117,7 +117,7 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 				return
 
 			}
-		case <-c.ctx.Done(): // respect cancellation
+		case <-c.ctx.Done(): // respect cancellation :tesbeh:
 			log.Println("Monitor connection is stopping due to cancellation.")
 			return
 		}
