@@ -318,13 +318,16 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			fmt.Printf(
-				"%s L: %.2f C: %.2f V: %.2f\n",
-				symbol,
-				metrics.RSILive,
-				metrics.RSIClosed,
-				metrics.VolumeValueMedian,
-			)
+			if metrics.RSIClosed < 21 {
+				log.Printf(
+					"%s L: %.2f C: %.2f V: %.2f CP: %.2f \n",
+					symbol,
+					metrics.RSILive,
+					metrics.RSIClosed,
+					metrics.VolumeValueMedian,
+					metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
+				)
+			}
 		}
 
 		mapMutex.Unlock()

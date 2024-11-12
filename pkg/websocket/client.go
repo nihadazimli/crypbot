@@ -113,6 +113,7 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 				err := c.ConnectAndStart(topics)
 				if err != nil {
 					log.Println("Cannot reconnect to web socket...")
+					continue
 				}
 				return
 

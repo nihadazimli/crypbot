@@ -132,7 +132,8 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 					)
 					continue
 				}
-				orderParams.OrderAmount = remainingQty
+				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+				//orderParams.OrderAmount = remainingQty
 			}
 
 			params := broker_api.AmendOrderRequestParams{
@@ -300,7 +301,8 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					)
 					continue
 				}
-				orderParams.OrderAmount = remainingQty
+				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+				//orderParams.OrderAmount = remainingQty
 			}
 			params := broker_api.AmendOrderRequestParams{
 				Symbol:   symbol,
