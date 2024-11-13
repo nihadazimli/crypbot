@@ -304,7 +304,7 @@ func (fe *Engine) getDefaultMissingDataValue() float64 {
 	return fe.cfg.Defaults.MissingDataValue
 }
 func (fe *Engine) Show() {
-
+	var prevClosedRsi float64
 	// Extract and sort the keys (symbols) from the Coins map
 	var symbols []string
 	for symbol := range fe.Coins {
@@ -313,12 +313,10 @@ func (fe *Engine) Show() {
 	sort.Strings(symbols) // Sorts the slice of symbols in increasing order
 
 	for {
-		mapMutex.Lock()
-
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			if metrics.RSIClosed < 21 {
+			if metrics.RSIClosed < 21 && prevClosedRsi != metrics.RSIClosed {
 				log.Printf(
 					"%s L: %.2f C: %.2f V: %.2f CP: %.2f \n",
 					symbol,
@@ -327,11 +325,11 @@ func (fe *Engine) Show() {
 					metrics.VolumeValueMedian,
 					metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
 				)
+				prevClosedRsi = metrics.RSIClosed
 			}
 		}
 
-		mapMutex.Unlock()
-		time.Sleep(1 * time.Second) // Update frequency; adjust as needed
+		time.Sleep(10 * time.Second) // Update frequency; adjust as needed
 	}
 }
 

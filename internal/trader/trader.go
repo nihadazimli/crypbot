@@ -238,6 +238,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 								tc.getSellCheckIntervalDuration(),
 								err,
 							)
+							continue
 						}
 						if success := tc.executeSellOrder(ctx, symbol); success {
 							log.Printf("Successfully executed sell order for %s\n", symbol)
