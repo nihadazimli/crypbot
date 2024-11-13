@@ -1,0 +1,14 @@
+Araz:
+
+- Come up with updated coin list
+- Finalize backtesting on new buy condition
+- Update the algo in the repo
+- Should we add duration?
+
+Nihad:
+
+- Fix the priority of coins for buying.
+  - Currently, we buy the one for which the data arrives first. We need to make this random. 
+- Sell based on closed RSI
+- Continue the buy process until next closed RSI is above 20. 
+  - When closed RSI goes below 20, we start a buy process. Buy process continues as long as live RSI is below 20. If it goes above 20, it stops. Drawback of this is that when closed RSI closes slightly below 20 (e.g. 19.9), it is very likely that live RSI can cancel the buy process and we do not try again once it goes back below 20 again. Instead, we can continue trying until next closed RSI is above 20.
