@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"time"
 
 	"github.com/google/uuid"
@@ -109,7 +110,9 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 		select {
 		case <-ticker.C:
 			if !c.isConnected {
-				log.Printf("Attempting to reconnect for %s...\n", c.url)
+				delay := time.Millisecond * time.Duration(rand.Float64()*4000+1000) // 1000 to 5000 milliseconds
+				log.Printf("Attempting to reconnect for %s after %v milliseconds...\n", c.url, delay)
+				time.Sleep(delay)
 				err := c.ConnectAndStart(topics)
 				if err != nil {
 					log.Println("Cannot reconnect to web socket...")
