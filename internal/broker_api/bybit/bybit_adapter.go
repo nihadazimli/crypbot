@@ -86,15 +86,17 @@ const (
 )
 
 type Adapter struct {
-	HTTPClient     *bybit.Client
-	cfg            *config.Config
-	activeOrders   map[string]broker_api.ActiveOrderTracker
-	klineWriteChan chan model.WSInternalKline
-	precision      map[string]model.Precision
-	precisionMutex sync.RWMutex
+	HTTPClient            *bybit.Client
+	cfg                   *config.Config
+	orderWebsocket        *websocket.WebSocketClient
+	activeOrders          map[string]broker_api.ActiveOrderTracker
+	klineWriteChan        chan model.WSInternalKline
+	precision             map[string]model.Precision
+	precisionMutex        sync.RWMutex
+	orderStreamSubscribed bool
 }
 
-func NewBybitAdapter() *Adapter {
+func NewBybitAdapter(ctx context.Context) *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
 		HTTPClient: bybit.NewBybitHttpClient(
@@ -106,12 +108,14 @@ func NewBybitAdapter() *Adapter {
 		precision:    make(map[string]model.Precision),
 		activeOrders: make(map[string]broker_api.ActiveOrderTracker),
 	}
-	err := ba.startOrderStream(context.Background())
-	if err != nil {
-		log.Printf("Cannot subscribe to order stream. Err: %v\n", err)
-		return nil
-	}
-
+	ba.orderWebsocket = websocket.NewWebSocketClientPrivate(
+		ctx,
+		ba.cfg.Broker.WebSocket.AddressPrivate,
+		ba.cfg.Broker.API.Key,
+		ba.cfg.Broker.API.Secret,
+		ba.cfg.Broker.WebSocket.PingInterval,
+		ba.handlePrivateWSMessages,
+	)
 	return ba
 }
 
@@ -593,16 +597,34 @@ func getSymbolFromKlineTopic(topic string) string {
 	return topic[strings.LastIndex(topic, ".")+1:]
 }
 
-func (ba *Adapter) startOrderStream(ctx context.Context) error {
-	ws := websocket.NewWebSocketClientPrivate(
-		ctx,
-		ba.cfg.Broker.WebSocket.AddressPrivate,
-		ba.cfg.Broker.API.Key,
-		ba.cfg.Broker.API.Secret,
-		ba.cfg.Broker.WebSocket.PingInterval,
-		ba.handlePrivateWSMessages,
-	)
-	err := ws.ConnectAndStart([]string{"order"})
+func (ba *Adapter) StartOrderStream() error {
+	if !ba.orderStreamSubscribed {
+		err := ba.subscribeToOrderStream()
+		if err != nil {
+			return err
+		}
+		ba.orderStreamSubscribed = true
+	}
+	return nil
+}
+
+func (ba *Adapter) StopOrderStream() error {
+	if ba.orderStreamSubscribed {
+		err := ba.unsubscribeFromOrderStream()
+		if err != nil {
+			return err
+		}
+		ba.orderStreamSubscribed = false
+	}
+	return nil
+}
+func (ba *Adapter) unsubscribeFromOrderStream() error {
+	ba.orderWebsocket.Shutdown()
+	return nil
+}
+
+func (ba *Adapter) subscribeToOrderStream() error {
+	err := ba.orderWebsocket.ConnectAndStart([]string{"order"})
 	if err != nil {
 		return err
 	}

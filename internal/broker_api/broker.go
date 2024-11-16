@@ -23,6 +23,8 @@ type BrokerAPI interface {
 		ctx context.Context,
 		params OpenOrderRequestParams,
 	) (float64, error)
+	StartOrderStream() error
+	StopOrderStream() error
 }
 
 type BuyOrderResult struct {

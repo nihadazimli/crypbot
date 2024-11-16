@@ -65,6 +65,11 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 		log.Printf("Buy conditions are not met for %s! :(\n", symbol)
 		return
 	}
+	err := tc.broker.StartOrderStream()
+	if err != nil {
+		log.Printf("Cannot start listening to order stream. Err: %v\n", err)
+		return
+	}
 
 	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
@@ -242,6 +247,10 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 						}
 						if success := tc.executeSellOrder(ctx, symbol); success {
 							log.Printf("Successfully executed sell order for %s\n", symbol)
+							err := tc.broker.StopOrderStream()
+							if err != nil {
+								log.Printf("Order stream cannot be stopped! Err:%v\n", err)
+							}
 							delete(tc.activeOrders, symbol)
 							return
 						} else {

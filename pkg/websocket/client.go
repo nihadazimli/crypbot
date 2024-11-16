@@ -7,29 +7,27 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nihadazimli/crypbot/internal/model"
-
 	"github.com/gorilla/websocket"
 )
 
 type WebSocketClient struct {
-	conn           *websocket.Conn
-	url            string
-	apiKey         string
-	apiSecret      string
-	handler        MessageHandler
-	klineWriteChan chan model.WSInternalKline
-	isConnected    bool
-	pingInterval   int
-	isPrivate      bool
-	ctx            context.Context
-	cancel         context.CancelFunc
+	conn         *websocket.Conn
+	url          string
+	apiKey       string
+	apiSecret    string
+	handler      MessageHandler
+	isConnected  bool
+	pingInterval int
+	isPrivate    bool
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 type MessageHandler func(message []byte) error
@@ -129,12 +127,25 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 }
 
 func (c *WebSocketClient) Shutdown() {
+	// Cancel the context to stop any associated goroutines
 	c.cancel()
-	err := c.conn.Close()
-	if err != nil {
-		return
+
+	// Create a close message
+	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closing connection")
+
+	// Send the close message with a specified timeout
+	err := c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
+	if err != nil && !errors.Is(err, websocket.ErrCloseSent) {
+		log.Printf("Failed to send close message: %v", err)
 	}
-	log.Println("WebSocket client has been shut down.")
+
+	// Close the WebSocket connection regardless of whether the close message was sent successfully
+	err = c.conn.Close()
+	if err != nil {
+		log.Printf("Failed to close WebSocket connection: %v", err)
+	} else {
+		log.Println("WebSocket connection closed successfully.")
+	}
 }
 
 func (c *WebSocketClient) subscribe(topic []string) {
@@ -150,9 +161,15 @@ func (c *WebSocketClient) subscribe(topic []string) {
 
 func (c *WebSocketClient) readPump() {
 	for {
+		if !c.isConnected {
+			log.Println("Connection is not active. Exiting readPump.")
+			return
+		}
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("Failed to read message:", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Failed to read message. Err: %v\n", err)
+			}
 			c.isConnected = false
 			return
 		}
@@ -165,13 +182,26 @@ func (c *WebSocketClient) readPump() {
 }
 
 func (c *WebSocketClient) keepAlive(pingInterval int) {
+	ticker := time.NewTicker(time.Second * time.Duration(pingInterval))
+	defer ticker.Stop()
+
 	for {
-		err := c.conn.WriteMessage(websocket.PingMessage, nil)
-		if err != nil {
-			log.Println("Ping failed:", err)
+		select {
+		case <-ticker.C:
+			if !c.isConnected {
+				log.Println("Ping skipped: connection not established.")
+				return
+			}
+
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Println("Ping failed:", err)
+				c.isConnected = false
+				return
+			}
+		case <-c.ctx.Done():
+			log.Println("Stopping keepAlive due to context cancellation.")
 			return
 		}
-		time.Sleep(time.Second * time.Duration(pingInterval))
 	}
 }
 

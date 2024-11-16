@@ -32,7 +32,7 @@ func main() {
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
-	bybitAdapter := bybit.NewBybitAdapter()
+	bybitAdapter := bybit.NewBybitAdapter(ctx)
 
 	fe := financial.Start(ctx, bybitAdapter, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
 	go fe.ProcessKline()
