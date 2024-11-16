@@ -1,7 +1,18 @@
 Araz:
 
 - Come up with updated coin list
+
+1. Get 3 month of daily Kline data and calculate median daily volume
+2. Check how many coins are above 1M. Should be around 100
+3. If yes, sort them in descending order and check manually some of the ones in the bottom. Is there something weird? 
+
 - Finalize backtesting on new buy condition
+
+1. We need one plot for the period of Oct.23 and Oct.24: Return of old algo, return of new algo over time plotted together with BTC price.
+2. Create main_df_4h for 2403 - 2410 period
+3. Create main_df_15m for the same period and filter out the coins with median vol <1M.
+4. Repeat (1) for 2403 - 2410.
+
 - Update the algo in the repo
 - Should we add duration?
 
