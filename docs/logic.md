@@ -31,7 +31,7 @@
 ## When Selling:
 
 - **Conditions**:
-  - RSI > 40
+  - RSI (closed) > 40
   - Coin balance in USD > 5 (true unless stop loss was hit already).
 
 - **Procedure**:
