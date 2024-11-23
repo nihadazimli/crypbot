@@ -5,6 +5,7 @@
   - Median 24h volume > threshold
   - Total coin balance in USD < 5
   - Available balance > 5
+  - 4H 50 MA (closed) > 4H 100 MA (closed)
 
 - **Procedure**:
   
