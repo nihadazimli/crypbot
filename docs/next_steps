@@ -1,25 +1,22 @@
 Araz:
 
-- Come up with updated coin list
-
-1. Get 3 month of daily Kline data and calculate median daily volume
-2. Check how many coins are above 1M. Should be around 100
-3. If yes, sort them in descending order and check manually some of the ones in the bottom. Is there something weird? 
-
-- Finalize backtesting on new buy condition
-
-1. We need one plot for the period of Oct.23 and Oct.24: Return of old algo, return of new algo over time plotted together with BTC price.
-2. Create main_df_4h for 2403 - 2410 period
-3. Create main_df_15m for the same period and filter out the coins with median vol <1M.
-4. Repeat (1) for 2403 - 2410.
-
-- Update the algo in the repo
+- Come up with updated coin list - DONE
+- Finalize backtesting on new buy condition. - DONE
+- Add new condition to the logic - DONE
 - Should we add duration?
+  - The loss rate of algo is quite high when the trade lasts more than 4 hrs. Some ideas to fix this: 
+    - Add trade time limit (sell right away after 4 hrs) - DOES NOT WORK
+    - Sell based on 30 RSI (closed) after 4 hrs - DOES NOT WORK
+    - Sell based on 40 RSI (live) after 4 hrs - pending on data + backtesting
+    - Sell when RSI (closed) increases by 20 after 4 hrs - pending on backtesting
 
 Nihad:
 
 - Fix the priority of coins for buying.
   - Currently, we buy the one for which the data arrives first. We need to make this random. 
-- Sell based on closed RSI
+- Add the new logic (check logic.md).
+- Sell based on closed RSI.
 - Continue the buy process until next closed RSI is above 20. 
-  - When closed RSI goes below 20, we start a buy process. Buy process continues as long as live RSI is below 20. If it goes above 20, it stops. Drawback of this is that when closed RSI closes slightly below 20 (e.g. 19.9), it is very likely that live RSI can cancel the buy process and we do not try again once it goes back below 20 again. Instead, we can continue trying until next closed RSI is above 20.
+  - When closed RSI goes below 20, we start a buy process. Buy process continues as long as live RSI is below 20. 
+If it goes above 20, it stops. Drawback of this is that when closed RSI closes slightly below 20 (e.g. 19.9), it is very likely that live RSI can cancel the buy process and we do not try again once it goes back below 20 again. Instead, we can continue trying until next closed RSI is above 20.
+
