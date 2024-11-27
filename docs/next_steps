@@ -9,6 +9,8 @@ Araz:
     - Sell based on 30 RSI (closed) after 4 hrs - DOES NOT WORK
     - Sell based on 40 RSI (live) after 4 hrs - pending on data + backtesting
     - Sell when RSI (closed) increases by 20 after 4 hrs - pending on backtesting
+- How does the algorithm perform for newly listed coins?
+- How is the performance for the trades driven by market vs the trades driven by individual coin moves?
 
 Nihad:
 
