@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
@@ -86,7 +90,7 @@ const (
 )
 
 type Adapter struct {
-	HTTPClient            *bybit.Client
+	BybitClient           *bybit.Client
 	cfg                   *config.Config
 	orderWebsocket        *websocket.WebSocketClient
 	activeOrders          map[string]broker_api.ActiveOrderTracker
@@ -99,7 +103,7 @@ type Adapter struct {
 func NewBybitAdapter(ctx context.Context) *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
-		HTTPClient: bybit.NewBybitHttpClient(
+		BybitClient: bybit.NewBybitHttpClient(
 			cfg.Broker.API.Key,
 			cfg.Broker.API.Secret,
 			bybit.WithBaseURL(bybit.MAINNET),
@@ -139,7 +143,7 @@ func (ba *Adapter) getWalletResult(
 	ctx context.Context,
 	requestParams map[string]interface{},
 ) (WalletResult, error) {
-	walletResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).
+	walletResponse, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).
 		GetAccountWallet(ctx)
 	if err != nil {
 		return WalletResult{}, err
@@ -183,7 +187,7 @@ func (ba *Adapter) PlaceBuyOrder(
 		"stopLoss":    strconv.FormatFloat(stopLossPrice, 'f', -1, 64),
 		"slOrderType": "Market",
 	}
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
 		return broker_api.BuyOrderResult{}, err
@@ -237,7 +241,7 @@ func (ba *Adapter) GetOrderBook(
 		"limit":    params.Limit,
 		"category": "spot",
 	}
-	orderBookService := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams)
+	orderBookService := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams)
 
 	response, err := orderBookService.GetOrderBookInfo(ctx)
 	if err != nil {
@@ -324,7 +328,7 @@ func (ba *Adapter) PlaceSellOrder(
 	}
 
 	log.Printf("request params: %v\n", requestParams)
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
 		return broker_api.SellOrderResult{}, err
@@ -375,7 +379,7 @@ func (ba *Adapter) CancelAllTPSLOrders(ctx context.Context, symbol string) error
 		"symbol":      symbol,
 		"orderFilter": "tpslOrder",
 	}
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelAllOrders(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).CancelAllOrders(ctx)
 	if err != nil {
 		return fmt.Errorf("Cannot cancel order. Err: %s\n", err)
 	}
@@ -400,7 +404,7 @@ func (ba *Adapter) CancelOrder(
 		"symbol":   params.Symbol,
 		"orderId":  params.OrderId,
 	}
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
 
 	if err != nil {
 		return broker_api.CancelOrderResult{}, err
@@ -465,7 +469,7 @@ func (ba *Adapter) AmendOrder(
 		requestParams["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
 	}
 
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
 
 	if err != nil {
 		return broker_api.AmendOrderResult{}, err
@@ -501,6 +505,61 @@ func (ba *Adapter) AmendOrder(
 		)
 	}
 	return details, nil
+}
+
+func (ba *Adapter) GetKlineHistory(ctx context.Context, params broker_api.KlineHistoryParams) (broker_api.KlineHistoryResult, error) {
+	startTime, endTime := determineTimeInterval(params.Limit, params.Interval)
+
+	requestParams := map[string]string{
+		"symbol":   params.Symbol,
+		"category": ba.cfg.MarketConstants.KlineCategory,
+		"interval": strconv.Itoa(params.Interval),
+		"start":    strconv.FormatInt(startTime, 10),
+		"end":      strconv.FormatInt(endTime, 10),
+		"limit":    strconv.Itoa(params.Limit + 1),
+	}
+
+	requestUrl := buildUrl(ba.cfg.Broker.API.Host, ba.cfg.Broker.API.RequestPaths.Kline, requestParams)
+	req, err := http.NewRequestWithContext(ctx, "GET", requestUrl, nil)
+	if err != nil {
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("error creating request for kline data: %w", err)
+	}
+
+	response, err := ba.BybitClient.HTTPClient.Do(req)
+	if err != nil {
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("error fetching kline data: %w", err)
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("error reading response body: %w", err)
+	}
+
+	var apiResponse model.KlineApiResponse
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("error unmarshaling JSON: %w", err)
+	}
+
+	if len(apiResponse.Result.List) < 1 {
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("no kline data available for symbol: %s", params.Symbol)
+	}
+
+	// Extract the 5th value (close price) from each list
+	closePrices := make([]float64, 0, len(apiResponse.Result.List))
+	volumeValues := make([]float64, 0, len(apiResponse.Result.List))
+	for _, item := range apiResponse.Result.List {
+		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
+		volumeAmount, _ := strconv.ParseFloat(strings.TrimSpace(item[5]), 64)
+
+		closePrices = append(closePrices, closePrice)
+		volumeValues = append(volumeValues, volumeAmount*closePrice)
+	}
+	reverse(closePrices)
+	reverse(volumeValues)
+
+	// Eliminate live value, just return most recent closed values
+	return broker_api.KlineHistoryResult{ClosePrices: closePrices[:len(closePrices)-1], Volumes: volumeValues[:len(volumeValues)-1]}, nil
 }
 
 func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
@@ -757,7 +816,7 @@ func (ba *Adapter) getOpenOrder(
 		queryParams["symbol"] = params.Symbol
 	}
 
-	openOrdersResponse, err := ba.HTTPClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
+	openOrdersResponse, err := ba.BybitClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
 	if err != nil {
 		return OrderInfo{}, err
 	}
@@ -807,7 +866,7 @@ func (ba *Adapter) fetchPrecisionFromAPI(
 		"category": "spot",
 	}
 
-	response, err := ba.HTTPClient.NewUtaBybitServiceWithParams(params).GetInstrumentInfo(ctx)
+	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(params).GetInstrumentInfo(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("API request failed: %w", err)
 	}
@@ -883,4 +942,38 @@ func chunkSymbols(symbols []string, chunkSize int) [][]string {
 	}
 
 	return allChunks
+}
+
+// determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
+// it returns startTime and endTime in milliseconds since the epoch.
+func determineTimeInterval(n int, interval int) (int64, int64) {
+	now := time.Now()
+	pastDuration := time.Duration(n*interval) * time.Minute
+	pastTime := now.Add(-pastDuration)
+
+	return pastTime.UnixMilli(), now.UnixMilli()
+}
+
+func buildUrl(host string, path string, params map[string]string) string {
+	baseUrl, err := url.Parse(host)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	baseUrl.Path, _ = url.JoinPath(baseUrl.Path, path)
+
+	queryParams := url.Values{}
+	for k, v := range params {
+		queryParams.Add(k, v)
+	}
+	baseUrl.RawQuery = queryParams.Encode()
+
+	return baseUrl.String()
+}
+
+// reverse given float64 numbers slice this function reverses every value in place
+func reverse(numbers []float64) {
+	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
+		numbers[i], numbers[j] = numbers[j], numbers[i]
+	}
 }

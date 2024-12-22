@@ -3,15 +3,11 @@ package financial
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -75,10 +71,10 @@ func Start(
 	klineReceived := make(chan model.WSInternalKline)
 
 	fe := NewFinancialEngine(cfg, broker, klineReceived, closedKlineReceived, buyReady, timeout)
-	fe.loadRecentKlineData()
+	fe.loadRecentKlineData(ctx)
 
 	err := fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
-		Symbols: cfg.KlineTopics, KlineWriteChan: klineReceived,
+		Symbols: fe.cfg.KlineTopics, KlineWriteChan: fe.klineReceived,
 	})
 	if err != nil {
 		log.Printf("Cannot start KlineStream. Err: %v\n", err)
@@ -221,67 +217,29 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 }
 
 // initClosedCoinMetrics retrieves most recent n closed klines for a given trading symbol and initializes CoinMetrics.
-func (fe *Engine) initClosedCoinMetrics(symbol string, n int) (*model.CoinMetrics, error) {
-	startTime, endTime := determineTimeInterval(n, fe.cfg.MarketConstants.KlineInterval)
+func (fe *Engine) initClosedCoinMetrics(ctx context.Context, symbol string, n int) (*model.CoinMetrics, error) {
 
-	params := map[string]string{
-		"symbol":   symbol,
-		"category": fe.cfg.MarketConstants.KlineCategory,
-		"interval": strconv.Itoa(fe.cfg.MarketConstants.KlineInterval),
-		"start":    strconv.FormatInt(startTime, 10),
-		"end":      strconv.FormatInt(endTime, 10),
-		"limit":    strconv.Itoa(n + 1),
+	params := broker_api.KlineHistoryParams{
+		Symbol:   symbol,
+		Interval: fe.cfg.MarketConstants.KlineInterval,
+		Limit:    n,
 	}
 
-	requestUrl := buildUrl(fe.cfg.Broker.API.Host, fe.cfg.Broker.API.RequestPaths.Kline, params)
-	req, err := http.NewRequest("GET", requestUrl, nil)
+	klineHistory, err := fe.broker.GetKlineHistory(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request for kline data: %w", err)
+		return nil, fmt.Errorf("GetKlineHistory - %v", err)
 	}
 
-	response, err := fe.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching kline data: %w", err)
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %w", err)
-	}
-
-	var apiResponse model.KlineApiResponse
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("error unmarshaling JSON: %w", err)
-	}
-
-	if len(apiResponse.Result.List) < 1 {
-		return nil, fmt.Errorf("no kline data available for symbol: %s", symbol)
-	}
-
-	// Extract the 5th value (close price) from each list
-	closePrices := make([]float64, 0, len(apiResponse.Result.List))
-	volumeValues := make([]float64, 0, len(apiResponse.Result.List))
-	for _, item := range apiResponse.Result.List {
-		closePrice, _ := strconv.ParseFloat(strings.TrimSpace(item[4]), 64)
-		volumeAmount, _ := strconv.ParseFloat(strings.TrimSpace(item[5]), 64)
-
-		closePrices = append(closePrices, closePrice)
-		volumeValues = append(volumeValues, volumeAmount*closePrice)
-	}
-	reverse(closePrices)
-	reverse(volumeValues)
-
-	// Eliminate live value, just return most recent closed values
 	return &model.CoinMetrics{
-		ClosePriceClosed:  closePrices[:len(closePrices)-1],
-		VolumeValueClosed: volumeValues[:len(volumeValues)-1],
+		ClosePriceClosed:  klineHistory.ClosePrices,
+		VolumeValueClosed: klineHistory.Volumes,
 	}, nil
 }
 
-func (fe *Engine) loadRecentKlineData() {
+func (fe *Engine) loadRecentKlineData(ctx context.Context) {
 	for _, symbol := range fe.cfg.Symbols {
 		coinMetrics, err := fe.initClosedCoinMetrics(
+			ctx,
 			symbol,
 			fe.cfg.MarketConstants.MetricsWindowSize,
 		)

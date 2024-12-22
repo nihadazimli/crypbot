@@ -23,8 +23,20 @@ type BrokerAPI interface {
 		ctx context.Context,
 		params OpenOrderRequestParams,
 	) (float64, error)
+	GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error)
 	StartOrderStream() error
 	StopOrderStream() error
+}
+
+type KlineHistoryParams struct {
+	Symbol   string
+	Interval int
+	Limit    int
+}
+
+type KlineHistoryResult struct {
+	ClosePrices []float64
+	Volumes     []float64
 }
 
 type BuyOrderResult struct {
