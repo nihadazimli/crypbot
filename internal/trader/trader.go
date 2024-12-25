@@ -362,6 +362,17 @@ func (tc *Trader) buyConditionsMet(symbol string) bool {
 		return false
 	}
 
+	movingAverages, err := tc.financial.GetMovingAverage(symbol)
+	if err != nil {
+		log.Printf("Could not retrieve MA - Err: %s\n", err)
+		return false
+	}
+
+	if movingAverages.MA50 < movingAverages.MA100 {
+		log.Printf("Moving average short is smaller than moving average long. MA values: %v\n", movingAverages)
+		return false
+	}
+
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
 		log.Println("RSILive too big")
 		return false

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"sync"
 	"time"
@@ -20,24 +19,46 @@ var (
 	mapMutex sync.Mutex
 )
 
+type MACache struct {
+	MAShort     float64
+	MALong      float64
+	LastUpdated time.Time
+}
+
 type EngineInterface interface {
 	ProcessKline()
 	GetRSIClosed(symbol string) (float64, bool)
 	GetRSILive(symbol string) (float64, bool)
 	GetVolumeValueMedian(symbol string) (float64, bool)
 	GetCurrentPrice(symbol string) (float64, bool)
-	ProcessRSI()
+	GetMovingAverage(symbol string) (model.MovingAverage, error)
 	Show()
 }
 
 type Engine struct {
-	httpClient          *http.Client
-	cfg                 *config.Config
-	broker              broker_api.BrokerAPI
-	closedKlineReceived chan string
-	buyReady            chan string
-	klineReceived       chan model.WSInternalKline
-	Coins               map[string]*model.CoinMetrics
+	httpClient    *http.Client
+	cfg           *config.Config
+	broker        broker_api.BrokerAPI
+	buyReady      chan string
+	klineReceived chan model.WSInternalKline
+	Coins         map[string]*model.CoinMetrics
+	maCache       map[string]*MACache
+	maCacheTTL    time.Duration
+	maCacheMutex  sync.RWMutex
+}
+
+func (fe *Engine) GetMovingAverage(symbol string) (model.MovingAverage, error) {
+
+	maData, err := fe.getMovingAverage(symbol)
+	if err != nil {
+		return model.MovingAverage{}, fmt.Errorf("Get Moving Average - %s - Err: %v", err)
+	}
+
+	return model.MovingAverage{
+		MA50:  maData.MAShort,
+		MA100: maData.MALong,
+	}, nil
+
 }
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
@@ -45,33 +66,35 @@ func NewFinancialEngine(
 	cfg *config.Config,
 	broker broker_api.BrokerAPI,
 	klineReceived chan model.WSInternalKline,
-	closedKlineReceived chan string,
 	buyReady chan string,
 	httpTimeoutSec int,
+	maCacheTTL time.Duration,
 ) *Engine {
 	return &Engine{
-		httpClient:          &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:                 cfg,
-		Coins:               make(map[string]*model.CoinMetrics),
-		klineReceived:       klineReceived,
-		closedKlineReceived: closedKlineReceived,
-		buyReady:            buyReady,
-		broker:              broker,
+		httpClient:    &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:           cfg,
+		Coins:         make(map[string]*model.CoinMetrics),
+		maCache:       make(map[string]*MACache),
+		maCacheTTL:    maCacheTTL,
+		klineReceived: klineReceived,
+		buyReady:      buyReady,
+		broker:        broker,
 	}
 }
 
 func Start(
 	ctx context.Context,
 	broker broker_api.BrokerAPI,
-	closedKlineReceived chan string,
 	buyReady chan string,
 	timeout int,
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
+	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
-	fe := NewFinancialEngine(cfg, broker, klineReceived, closedKlineReceived, buyReady, timeout)
+	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, timeout, maCacheTimeout)
 	fe.loadRecentKlineData(ctx)
+	fe.startCacheCleanup(ctx)
 
 	err := fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
 		Symbols: fe.cfg.KlineTopics, KlineWriteChan: fe.klineReceived,
@@ -143,8 +166,7 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 	if len(coinMetrics.ClosePriceClosed) > fe.cfg.MarketConstants.MetricsWindowSize {
 		coinMetrics.ClosePriceClosed = coinMetrics.ClosePriceClosed[len(coinMetrics.ClosePriceClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
 		coinMetrics.VolumeValueClosed = coinMetrics.VolumeValueClosed[len(coinMetrics.VolumeValueClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
-
-		fe.closedKlineReceived <- klineDatapoint.Symbol
+		fe.processMarketDataAndStoreMetrics(klineDatapoint.Symbol)
 	}
 }
 
@@ -174,24 +196,22 @@ func (fe *Engine) getOrCreateCoinMetrics(symbol string) *model.CoinMetrics {
 	return metrics
 }
 
-func (fe *Engine) ProcessRSI() {
-	for symbol := range fe.closedKlineReceived {
-		rsi, err := fe.calculateAndStoreMarketMetrics(symbol)
-		if err != nil {
-			log.Println("Error calculating RSI:", err)
-			continue
-		}
-		fe.evaluateRSI(symbol, rsi)
+func (fe *Engine) processMarketDataAndStoreMetrics(symbol string) {
+	err := fe.calculateAndStoreMarketMetrics(symbol)
+	if err != nil {
+		log.Println("Error calculating RSI:", err)
+		return
 	}
+	fe.evaluateRSI(symbol, fe.Coins[symbol].RSIClosed)
 }
 
-func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error) {
+func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
 	coinMetrics, exists := fe.Coins[symbol]
 	if !exists || len(coinMetrics.ClosePriceClosed) < fe.cfg.MarketConstants.MetricsWindowSize {
-		return 0, fmt.Errorf("insufficient data to calculate RSI for symbol: %s", symbol)
+		return fmt.Errorf("insufficient data to calculate RSI for symbol: %s", symbol)
 	}
 
 	rsi := calculateRSI(
@@ -207,7 +227,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) (float64, error)
 	fe.Coins[symbol].RSIClosed = rsi
 	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
 
-	return rsi, nil
+	return nil
 }
 
 func (fe *Engine) evaluateRSI(topic string, rsi float64) {
@@ -216,41 +236,36 @@ func (fe *Engine) evaluateRSI(topic string, rsi float64) {
 	}
 }
 
-// initClosedCoinMetrics retrieves most recent n closed klines for a given trading symbol and initializes CoinMetrics.
-func (fe *Engine) initClosedCoinMetrics(ctx context.Context, symbol string, n int) (*model.CoinMetrics, error) {
+// getRawCoinMetricsData retrieves most recent n closed klines for a given trading symbol and initializes CoinMetrics.
+func (fe *Engine) getRawCoinMetricsData(ctx context.Context, symbol string) (*model.CoinMetrics, error) {
 
 	params := broker_api.KlineHistoryParams{
 		Symbol:   symbol,
 		Interval: fe.cfg.MarketConstants.KlineInterval,
-		Limit:    n,
+		Limit:    fe.cfg.MarketConstants.MetricsWindowSize,
 	}
 
-	klineHistory, err := fe.broker.GetKlineHistory(ctx, params)
+	klineHistoryMarket, err := fe.broker.GetKlineHistory(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("GetKlineHistory - %v", err)
 	}
 
 	return &model.CoinMetrics{
-		ClosePriceClosed:  klineHistory.ClosePrices,
-		VolumeValueClosed: klineHistory.Volumes,
+		ClosePriceClosed:  klineHistoryMarket.ClosePrices,
+		VolumeValueClosed: klineHistoryMarket.Volumes,
 	}, nil
 }
 
 func (fe *Engine) loadRecentKlineData(ctx context.Context) {
 	for _, symbol := range fe.cfg.Symbols {
-		coinMetrics, err := fe.initClosedCoinMetrics(
-			ctx,
-			symbol,
-			fe.cfg.MarketConstants.MetricsWindowSize,
-		)
+		coinMetrics, err := fe.getRawCoinMetricsData(ctx, symbol)
 
 		if err != nil {
 			log.Println("Error fetching recent kline data for", symbol, ":", err)
 			continue
 		}
 		fe.Coins[symbol] = coinMetrics
-
-		_, err = fe.calculateAndStoreMarketMetrics(symbol)
+		err = fe.calculateAndStoreMarketMetrics(symbol)
 		if err != nil {
 			log.Println("Error calculating recent kline data for", symbol, ":", err)
 			continue
@@ -262,7 +277,7 @@ func (fe *Engine) getDefaultMissingDataValue() float64 {
 	return fe.cfg.Defaults.MissingDataValue
 }
 func (fe *Engine) Show() {
-	var prevClosedRsi float64
+	//var prevClosedRsi float64
 	// Extract and sort the keys (symbols) from the Coins map
 	var symbols []string
 	for symbol := range fe.Coins {
@@ -274,38 +289,82 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			if metrics.RSIClosed < 21 && prevClosedRsi != metrics.RSIClosed {
-				log.Printf(
-					"%s L: %.2f C: %.2f V: %.2f CP: %.2f \n",
-					symbol,
-					metrics.RSILive,
-					metrics.RSIClosed,
-					metrics.VolumeValueMedian,
-					metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
-				)
-				prevClosedRsi = metrics.RSIClosed
-			}
+			//if metrics.RSIClosed < 21 && prevClosedRsi != metrics.RSIClosed {
+			log.Printf(
+				"%s L: %.2f C: %.2f V: %.2f CP: %.2f MA100: %.2f MA50: % \n",
+				symbol,
+				metrics.RSILive,
+				metrics.RSIClosed,
+				metrics.VolumeValueMedian,
+				metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
+			)
+			//prevClosedRsi = metrics.RSIClosed
+			//}
 		}
 
 		time.Sleep(10 * time.Second) // Update frequency; adjust as needed
 	}
 }
 
-func buildUrl(host string, path string, params map[string]string) string {
-	baseUrl, err := url.Parse(host)
+func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
+	now := time.Now()
 
+	fe.maCacheMutex.RLock()
+	cache, exists := fe.maCache[symbol]
+	fe.maCacheMutex.RUnlock()
+
+	if exists && now.Sub(cache.LastUpdated) < fe.maCacheTTL {
+		return cache, nil
+	}
+
+	params := broker_api.KlineHistoryParams{
+		Symbol:   symbol,
+		Interval: fe.cfg.MarketConstants.ClosePriceMAInterval,
+		Limit:    fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
+	}
+	klineHistory, err := fe.broker.GetKlineHistory(context.Background(), params)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	baseUrl.Path, _ = url.JoinPath(baseUrl.Path, path)
 
-	queryParams := url.Values{}
-	for k, v := range params {
-		queryParams.Add(k, v)
+	maLong := movingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
+	maShort := movingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
+
+	fe.maCacheMutex.Lock()
+	fe.maCache[symbol] = &MACache{
+		MALong:      maLong,
+		MAShort:     maShort,
+		LastUpdated: now,
 	}
-	baseUrl.RawQuery = queryParams.Encode()
+	fe.maCacheMutex.Unlock()
 
-	return baseUrl.String()
+	return fe.maCache[symbol], nil
+}
+
+func (fe *Engine) startCacheCleanup(ctx context.Context) {
+	ticker := time.NewTicker(fe.maCacheTTL)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fe.cleanExpiredCache()
+			}
+		}
+	}()
+}
+
+func (fe *Engine) cleanExpiredCache() {
+	now := time.Now()
+	fe.maCacheMutex.Lock()
+	defer fe.maCacheMutex.Unlock()
+
+	for symbol, cache := range fe.maCache {
+		if now.Sub(cache.LastUpdated) >= fe.maCacheTTL {
+			delete(fe.maCache, symbol)
+		}
+	}
 }
 
 func calculateRSI(prices []float64, n int) float64 {
@@ -365,21 +424,18 @@ func ema(values []float64, n int) []float64 {
 	return emaValues
 }
 
-// determineTimeInterval determines for a given interval how much time needed to get n number of latest Klines
-// it returns startTime and endTime in milliseconds since the epoch.
-func determineTimeInterval(n int, interval int) (int64, int64) {
-	now := time.Now()
-	pastDuration := time.Duration(n*interval) * time.Minute
-	pastTime := now.Add(-pastDuration)
-
-	return pastTime.UnixMilli(), now.UnixMilli()
-}
-
-// reverse given float64 numbers slice this function reverses every value in place
-func reverse(numbers []float64) {
-	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
-		numbers[i], numbers[j] = numbers[j], numbers[i]
+// movingAverage calculates the Moving Average for a slice of float64.
+func movingAverage(values []float64, period int) float64 {
+	if len(values) < period {
+		return 0
 	}
+
+	sum := 0.0
+	for i := len(values) - period; i < len(values); i++ {
+		sum += values[i]
+	}
+
+	return sum / float64(period)
 }
 
 // findMedian calculates the median of a slice of float64 numbers.
