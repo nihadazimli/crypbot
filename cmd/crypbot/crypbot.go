@@ -28,15 +28,13 @@ func main() {
 
 	cfg := config.GetConfig()
 
-	closedKlineReceived := make(chan string, len(cfg.Symbols)+1)
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
 	bybitAdapter := bybit.NewBybitAdapter(ctx)
 
-	fe := financial.Start(ctx, bybitAdapter, closedKlineReceived, buyReady, cfg.Broker.API.Timeout)
+	fe := financial.Start(ctx, bybitAdapter, buyReady, cfg.Broker.API.Timeout)
 	go fe.ProcessKline()
-	go fe.ProcessRSI()
 
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go tc.ProcessBuySignal(ctx)

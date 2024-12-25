@@ -73,3 +73,8 @@ type Precision struct {
 	Qty   float64
 	Price float64
 }
+
+type MovingAverage struct {
+	MA100 float64
+	MA50  float64
+}
