@@ -82,7 +82,7 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 			switch condition {
 			case BuyConditionMet:
 				if err := tc.placeBuyOrderAndMonitor(ctx, symbol); err != nil {
-					log.Printf("Buy Order - Failed to place order for %s\n", symbol)
+					log.Printf("Buy Order - Failed to place order for %s. Err: %v\n", symbol, err)
 				}
 				return
 			case BuyConditionCancel:
@@ -368,7 +368,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 }
 
 func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
-
+	return BuyConditionMet
 	if len(tc.activeOrders) > 0 {
 		log.Printf("Already has a position. Active orders: %v", tc.activeOrders)
 		return BuyConditionCancel
@@ -406,7 +406,7 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("Moving average short is smaller than moving average long. MA values: %v\n", movingAverages)
+		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
 		return BuyConditionCancel
 	}
 
