@@ -59,6 +59,7 @@ type WalletResult struct {
 		TotalWalletBalance    string `json:"totalWalletBalance"`
 		Coin                  []struct {
 			WalletBalance string `json:"walletBalance"`
+			UsdValue      string `json:"usdValue"`
 		} `json:"coin"`
 	} `json:"list"`
 }
@@ -578,7 +579,7 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_a
 
 }
 
-func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64, error) {
+func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (broker_api.SymbolBalanceResult, error) {
 	baseCoin := removeUSDTSuffix(symbol)
 
 	requestParams := map[string]interface{}{
@@ -588,19 +589,26 @@ func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (float64
 
 	walletResult, err := ba.getWalletResult(ctx, requestParams)
 	if err != nil {
-		return 0.0, err
+		return broker_api.SymbolBalanceResult{}, err
 	}
 
 	if len(walletResult.List[0].Coin) == 0 {
-		return 0.0, fmt.Errorf("cannot get balance for coin %s", symbol)
+		return broker_api.SymbolBalanceResult{}, fmt.Errorf("cannot get balance for coin %s", symbol)
 	}
 
 	totalSymbolBalance, err := strconv.ParseFloat(walletResult.List[0].Coin[0].WalletBalance, 64)
 	if err != nil {
-		return 0.0, fmt.Errorf("error parsing total symbol wallet balance for %s symbol", symbol)
+		return broker_api.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
 	}
-
-	return totalSymbolBalance, nil
+	usdValue, err := strconv.ParseFloat(walletResult.List[0].Coin[0].UsdValue, 64)
+	if err != nil {
+		return broker_api.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
+	}
+	symbolBalanceResponse := broker_api.SymbolBalanceResult{
+		WalletBalance: totalSymbolBalance,
+		UsdValue:      usdValue,
+	}
+	return symbolBalanceResponse, nil
 }
 
 func (ba *Adapter) StartKlineStream(

@@ -17,7 +17,7 @@ type BrokerAPI interface {
 	CancelOrder(ctx context.Context, params CancelOrderRequestParams) (CancelOrderResult, error)
 	CancelAllTPSLOrders(ctx context.Context, symbol string) error
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
-	GetSymbolBalance(ctx context.Context, symbol string) (float64, error)
+	GetSymbolBalance(ctx context.Context, symbol string) (SymbolBalanceResult, error)
 	GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error)
 	GetRemainingQtyForPartialOrder(
 		ctx context.Context,
@@ -32,6 +32,11 @@ type KlineHistoryParams struct {
 	Symbol   string
 	Interval int
 	Limit    int
+}
+
+type SymbolBalanceResult struct {
+	WalletBalance float64
+	UsdValue      float64
 }
 
 type KlineHistoryResult struct {
