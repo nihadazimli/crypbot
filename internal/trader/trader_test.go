@@ -141,7 +141,7 @@ func TestTrader_BuyConditionsMet(t *testing.T) {
 	// Execute the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := trader.buyConditionsMet(tc.symbol)
+			result := trader.checkBuyConditions(tc.symbol)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
