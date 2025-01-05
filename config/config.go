@@ -48,6 +48,7 @@ type RequestPathsConfig struct {
 }
 
 type MarketConstantsConfig struct {
+	CloseKlineTimeoutMinutes    int    `yaml:"close_kline_timeout_minutes"`
 	KlineInterval               int    `yaml:"kline_interval"`
 	KlineCategory               string `yaml:"kline_category"`
 	MetricsWindowSize           int    `yaml:"metrics_window_size"`
