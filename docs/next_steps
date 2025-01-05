@@ -11,14 +11,14 @@ Araz:
     - Sell when RSI (closed) increases by 20 after 4 hrs - pending on backtesting
 - How does the algorithm perform for newly listed coins?
 - How is the performance for the trades driven by market vs the trades driven by individual coin moves?
+- Check if buying coin with lowest closed RSI value is better than random selection
 
 Nihad:
-
-- Fix the priority of coins for buying.
+- Fix the priority of coins for buying. - In Progress
   - Currently, we buy the one for which the data arrives first. We need to make this random. (waitgroup)
-- Add the new logic (check logic.md).
-- Sell based on closed RSI.
-- Continue the buy process until next closed RSI is above 20.
+- Add the new logic (check logic.md) - Done
+- Sell based on closed RSI
+- Continue the buy process until next closed RSI is above 20. - Done
   - When closed RSI goes below 20, we start a buy process. Buy process continues as long as live RSI is below 20.
 - Before cancelling buy attempt check if we bought anything. If yes, send sell signal for what you already got
 
