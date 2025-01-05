@@ -181,22 +181,6 @@ func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
 	}
 }
 
-// getOrCreateCoinMetrics ensures that each coin's metric structure is initialized before use
-func (fe *Engine) getOrCreateCoinMetrics(symbol string) (*model.CoinMetrics, error) {
-	mapMutex.Lock()
-	defer mapMutex.Unlock()
-
-	metrics, exists := fe.Coins[symbol]
-	if !exists {
-		log.Printf("Loaded data for missing symbol %s. Double check if values are correct!\n", symbol)
-		err := fe.loadRecentKlineData(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("getOrCreateCoinMetrics - %v", err)
-		}
-	}
-	return metrics, nil
-}
-
 func (fe *Engine) processMarketDataAndStoreMetrics(symbol string) {
 	//err := fe.calculateAndStoreMarketMetrics(symbol)
 	//if err != nil {
@@ -206,9 +190,9 @@ func (fe *Engine) processMarketDataAndStoreMetrics(symbol string) {
 	fe.evaluateRSI(symbol, fe.Coins[symbol].RSIClosed)
 }
 func (fe *Engine) storeRawMarketDataSlices(symbol string, closePrice float64, tradeVolume float64) error {
-	coinMetrics, err := fe.getOrCreateCoinMetrics(symbol)
-	if err != nil {
-		return fmt.Errorf("storeRawMarketDataSlices - %v", err)
+	coinMetrics, exists := fe.Coins[symbol]
+	if !exists {
+		return fmt.Errorf("storeRawMarketDataSlices - %s does not exist in coin map", symbol)
 	}
 
 	// Append new closed prices and volumes to their respective slices
@@ -232,7 +216,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 
 	coinMetrics, exists := fe.Coins[symbol]
 	if !exists || len(coinMetrics.ClosePriceClosed) < fe.cfg.MarketConstants.MetricsWindowSize {
-		return fmt.Errorf("insufficient data to calculate RSI for symbol: %s", symbol)
+		return fmt.Errorf("insufficient or missing data to calculate RSI for %s", symbol)
 	}
 
 	rsi := calculateRSI(
@@ -290,6 +274,7 @@ func (fe *Engine) loadRecentKlineData(ctx context.Context) error {
 			return fmt.Errorf("load recent kline - %v", err)
 		}
 	}
+	return nil
 }
 
 func (fe *Engine) getDefaultMissingDataValue() float64 {
