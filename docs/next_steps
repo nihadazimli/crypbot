@@ -20,7 +20,6 @@ Nihad:
 - Sell based on closed RSI
 - Continue the buy process until next closed RSI is above 20. - Done
   - When closed RSI goes below 20, we start a buy process. Buy process continues as long as live RSI is below 20.
-- Before cancelling buy attempt check if we bought anything. If yes, send sell signal for what you already got
+- Before cancelling buy attempt check if we bought anything. If yes, send sell signal for what you already got - Done
 
-If it goes above 20, it stops. Drawback of this is that when closed RSI closes slightly below 20 (e.g. 19.9), it is very likely that live RSI can cancel the buy process and we do not try again once it goes back below 20 again. Instead, we can continue trying until next closed RSI is above 20.
 
