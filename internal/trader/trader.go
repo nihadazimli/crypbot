@@ -257,14 +257,14 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 					log.Println("Stopping sell signal checker")
 					return
 				case <-ticker.C:
-					rsiLive, ok := tc.financial.GetRSILive(symbol)
+					rsiClosed, ok := tc.financial.GetRSIClosed(symbol)
 					if !ok {
 						log.Printf("No RSI live for symbol:%s\n", symbol)
 						return
 					}
 
-					if rsiLive >= tc.getRSISellValue() {
-						log.Printf("RSI hit the sell value. %s:%.2f\n", symbol, rsiLive)
+					if rsiClosed >= tc.getRSISellValue() {
+						log.Printf("RSI hit the sell value. %s:%.2f\n", symbol, rsiClosed)
 						err := tc.broker.CancelAllTPSLOrders(ctx, symbol)
 						if err != nil {
 							log.Printf(
