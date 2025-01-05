@@ -259,7 +259,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 				case <-ticker.C:
 					rsiClosed, ok := tc.financial.GetRSIClosed(symbol)
 					if !ok {
-						log.Printf("No RSI live for symbol:%s\n", symbol)
+						log.Printf("No RSI closed for symbol:%s\n", symbol)
 						return
 					}
 

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
+	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -417,13 +417,18 @@ func (fe *Engine) selectAndSignal() {
 		return // Nothing to buy in this cycle
 	}
 
-	var eligibleCoins []string
-	for symbol := range fe.buyTradeCandidateCoins {
-		eligibleCoins = append(eligibleCoins, symbol)
+	var selectedSymbol string
+	minRsi := math.MaxFloat64
+	for symbol, rsiValue := range fe.buyTradeCandidateCoins {
+		if rsiValue < minRsi {
+			selectedSymbol = symbol
+			minRsi = rsiValue
+		}
 	}
 
-	selectedSymbol := eligibleCoins[rand.Intn(len(eligibleCoins))]
-	log.Printf("selectAndSignal - EligibleCoins: %v, Selected Coin: %s\n", fe.buyTradeCandidateCoins, selectedSymbol)
+	log.Printf("selectAndSignal - EligibleCoins: %v, Selected Coin: %s with RSI: %.2f\n",
+		fe.buyTradeCandidateCoins, selectedSymbol, minRsi)
+
 	fe.buyReady <- selectedSymbol
 }
 
