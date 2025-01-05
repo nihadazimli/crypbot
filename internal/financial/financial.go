@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nihadazimli/crypbot/pkg/numutils"
+
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/model"
@@ -93,10 +95,14 @@ func Start(
 	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
 	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, timeout, maCacheTimeout)
-	fe.loadRecentKlineData(ctx)
+
+	err := fe.loadRecentKlineData(ctx)
+	if err != nil {
+		log.Printf("Cannot load recent data successfully. Err: %v\n", err)
+	}
 	fe.startCacheCleanup(ctx)
 
-	err := fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
+	err = fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
 		Symbols: fe.cfg.KlineTopics, KlineWriteChan: fe.klineReceived,
 	})
 	if err != nil {
@@ -150,23 +156,19 @@ func (fe *Engine) GetCurrentPrice(symbol string) (float64, bool) {
 }
 
 func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
-	coinMetrics := fe.getOrCreateCoinMetrics(klineDatapoint.Symbol)
 
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
-	// Append new closed prices and volumes to their respective slices
-	coinMetrics.ClosePriceClosed = append(coinMetrics.ClosePriceClosed, klineDatapoint.Close)
-	coinMetrics.VolumeValueClosed = append(
-		coinMetrics.VolumeValueClosed,
-		klineDatapoint.Close*klineDatapoint.Volume,
-	)
-
-	// Ensure the slices do not exceed the defined window size
-	if len(coinMetrics.ClosePriceClosed) > fe.cfg.MarketConstants.MetricsWindowSize {
-		coinMetrics.ClosePriceClosed = coinMetrics.ClosePriceClosed[len(coinMetrics.ClosePriceClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
-		coinMetrics.VolumeValueClosed = coinMetrics.VolumeValueClosed[len(coinMetrics.VolumeValueClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
-		fe.processMarketDataAndStoreMetrics(klineDatapoint.Symbol)
+	err := fe.storeRawMarketDataSlices(klineDatapoint.Symbol, klineDatapoint.Close, klineDatapoint.Volume)
+	if err != nil {
+		log.Printf("Process Closed Kline - error storing raw market data. Err:%v\n", err)
+		return
+	}
+	err = fe.calculateAndStoreMarketMetrics(klineDatapoint.Symbol)
+	if err != nil {
+		log.Printf("Process Closed Kline - error calculating RSI. Err:%v\n", err)
+		return
 	}
 }
 
@@ -180,29 +182,48 @@ func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
 }
 
 // getOrCreateCoinMetrics ensures that each coin's metric structure is initialized before use
-func (fe *Engine) getOrCreateCoinMetrics(symbol string) *model.CoinMetrics {
+func (fe *Engine) getOrCreateCoinMetrics(symbol string) (*model.CoinMetrics, error) {
 	mapMutex.Lock()
 	defer mapMutex.Unlock()
 
 	metrics, exists := fe.Coins[symbol]
 	if !exists {
-		// Initialize the coin if it does not exist
-		metrics = &model.CoinMetrics{
-			ClosePriceClosed:  make([]float64, 0, fe.cfg.MarketConstants.MetricsWindowSize+1),
-			VolumeValueClosed: make([]float64, 0, fe.cfg.MarketConstants.MetricsWindowSize+1),
+		log.Printf("Loaded data for missing symbol %s. Double check if values are correct!\n", symbol)
+		err := fe.loadRecentKlineData(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("getOrCreateCoinMetrics - %v", err)
 		}
-		fe.Coins[symbol] = metrics
 	}
-	return metrics
+	return metrics, nil
 }
 
 func (fe *Engine) processMarketDataAndStoreMetrics(symbol string) {
-	err := fe.calculateAndStoreMarketMetrics(symbol)
-	if err != nil {
-		log.Println("Error calculating RSI:", err)
-		return
-	}
+	//err := fe.calculateAndStoreMarketMetrics(symbol)
+	//if err != nil {
+	//	log.Println("Error calculating RSI:", err)
+	//	return
+	//}
 	fe.evaluateRSI(symbol, fe.Coins[symbol].RSIClosed)
+}
+func (fe *Engine) storeRawMarketDataSlices(symbol string, closePrice float64, tradeVolume float64) error {
+	coinMetrics, err := fe.getOrCreateCoinMetrics(symbol)
+	if err != nil {
+		return fmt.Errorf("storeRawMarketDataSlices - %v", err)
+	}
+
+	// Append new closed prices and volumes to their respective slices
+	coinMetrics.ClosePriceClosed = append(coinMetrics.ClosePriceClosed, closePrice)
+	coinMetrics.VolumeValueClosed = append(
+		coinMetrics.VolumeValueClosed,
+		closePrice*tradeVolume,
+	)
+
+	// Ensure the slices do not exceed the defined window size
+	if len(coinMetrics.ClosePriceClosed) > fe.cfg.MarketConstants.MetricsWindowSize {
+		coinMetrics.ClosePriceClosed = coinMetrics.ClosePriceClosed[len(coinMetrics.ClosePriceClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
+		coinMetrics.VolumeValueClosed = coinMetrics.VolumeValueClosed[len(coinMetrics.VolumeValueClosed)-fe.cfg.MarketConstants.MetricsWindowSize:]
+	}
+	return nil
 }
 
 func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
@@ -218,7 +239,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 		coinMetrics.ClosePriceClosed,
 		fe.cfg.MarketConstants.KlineInterval-1,
 	) //To get only latest RSI
-	volumeValueMedian := findMedian(
+	volumeValueMedian := numutils.FindMedian(
 		coinMetrics.VolumeValueClosed,
 	) * float64(
 		fe.cfg.MarketConstants.MetricsWindowSize,
@@ -247,7 +268,7 @@ func (fe *Engine) getRawCoinMetricsData(ctx context.Context, symbol string) (*mo
 
 	klineHistoryMarket, err := fe.broker.GetKlineHistory(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("GetKlineHistory - %v", err)
+		return nil, fmt.Errorf("GetKlineHistory - symbol %s err: %v", symbol, err)
 	}
 
 	return &model.CoinMetrics{
@@ -256,19 +277,17 @@ func (fe *Engine) getRawCoinMetricsData(ctx context.Context, symbol string) (*mo
 	}, nil
 }
 
-func (fe *Engine) loadRecentKlineData(ctx context.Context) {
+func (fe *Engine) loadRecentKlineData(ctx context.Context) error {
 	for _, symbol := range fe.cfg.Symbols {
 		coinMetrics, err := fe.getRawCoinMetricsData(ctx, symbol)
 
 		if err != nil {
-			log.Println("Error fetching recent kline data for", symbol, ":", err)
-			continue
+			return fmt.Errorf("load recent kline - %v", err)
 		}
 		fe.Coins[symbol] = coinMetrics
 		err = fe.calculateAndStoreMarketMetrics(symbol)
 		if err != nil {
-			log.Println("Error calculating recent kline data for", symbol, ":", err)
-			continue
+			return fmt.Errorf("load recent kline - %v", err)
 		}
 	}
 }
@@ -291,7 +310,7 @@ func (fe *Engine) Show() {
 			metrics := fe.Coins[symbol]
 			//if metrics.RSIClosed < 21 && prevClosedRsi != metrics.RSIClosed {
 			log.Printf(
-				"%s L: %.2f C: %.2f V: %.2f CP: %.2f MA100: %.2f MA50: % \n",
+				"%s L: %.2f C: %.2f V: %.2f CP: %.2f\n",
 				symbol,
 				metrics.RSILive,
 				metrics.RSIClosed,
@@ -327,8 +346,8 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 		return nil, err
 	}
 
-	maLong := movingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
-	maShort := movingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
+	maLong := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
+	maShort := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
 
 	fe.maCacheMutex.Lock()
 	fe.maCache[symbol] = &MACache{
@@ -392,8 +411,8 @@ func calculateRSI(prices []float64, n int) float64 {
 	}
 
 	//Calculate exponential moving average for gains and losses
-	avgGain := ema(gains, n)
-	avgLoss := ema(losses, n)
+	avgGain := numutils.ExponentialMovingAverage(gains, n)
+	avgLoss := numutils.ExponentialMovingAverage(losses, n)
 
 	// We only need the last RSI value
 	if avgLoss[len(avgLoss)-1] == 0 {
@@ -408,54 +427,4 @@ func calculateRSI(prices []float64, n int) float64 {
 	rsi := 100 - (100 / (1 + rs))
 
 	return rsi
-}
-
-// ema calculates the Exponential Moving Average for a slice of float64.
-// It returns the full series of EMA so that the calling function can select the last one.
-func ema(values []float64, n int) []float64 {
-	alpha := 1.0 / float64(n)
-	emaValues := make([]float64, len(values))
-	emaValues[0] = values[0] // Initialize the first EMA value to the first price
-
-	for i := 1; i < len(values); i++ {
-		emaValues[i] = values[i]*alpha + emaValues[i-1]*(1-alpha)
-	}
-
-	return emaValues
-}
-
-// movingAverage calculates the Moving Average for a slice of float64.
-func movingAverage(values []float64, period int) float64 {
-	if len(values) < period {
-		return 0
-	}
-
-	sum := 0.0
-	for i := len(values) - period; i < len(values); i++ {
-		sum += values[i]
-	}
-
-	return sum / float64(period)
-}
-
-// findMedian calculates the median of a slice of float64 numbers.
-func findMedian(values []float64) float64 {
-	n := len(values)
-	if n == 0 {
-		return 0 // or return an error indicating no values are present
-	}
-
-	// Make a copy of the slice to avoid altering the original data
-	sortedValues := make([]float64, n)
-	copy(sortedValues, values)
-	sort.Float64s(sortedValues)
-
-	// Finding the median
-	midpoint := n / 2 // Get the middle index
-	if n%2 != 0 {
-		// Odd number of elements
-		return sortedValues[midpoint] // Middle element
-	}
-	// Even number of elements, return the average of the two middle values
-	return (sortedValues[midpoint-1] + sortedValues[midpoint]) / 2
 }
