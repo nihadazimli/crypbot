@@ -90,6 +90,7 @@ func NewFinancialEngine(
 		broker:                 broker,
 		expectedCoinCount:      expectedCoinCount,
 		buyTradeCandidateCoins: make(map[string]float64),
+		processedCoinsInCycle:  make(map[string]bool),
 		cycleTimeout:           time.Duration(cfg.MarketConstants.CloseKlineTimeoutMinutes) * time.Minute,
 	}
 }
