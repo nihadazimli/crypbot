@@ -463,11 +463,6 @@ func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
 		return false
 	}
 
-	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
-		return false
-	}
-
 	if rsiClosed > fe.cfg.Trader.RSIBuyValue {
 		return false
 	}
@@ -475,5 +470,11 @@ func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
 	if volumeMedian < fe.cfg.Trader.MedianVolumeThreshold {
 		return false
 	}
+
+	if movingAverages.MA50 < movingAverages.MA100 {
+		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
+		return false
+	}
+
 	return true
 }
