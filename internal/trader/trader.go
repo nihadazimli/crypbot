@@ -368,7 +368,6 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 }
 
 func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
-	return BuyConditionMet
 	if len(tc.activeOrders) > 0 {
 		log.Printf("Already has a position. Active orders: %v", tc.activeOrders)
 		return BuyConditionCancel

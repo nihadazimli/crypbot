@@ -107,7 +107,7 @@ func Start(
 
 	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, timeout, maCacheTimeout, len(cfg.Symbols))
 
-	err := fe.loadRecentKlineData(ctx)
+	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
 	if err != nil {
 		log.Printf("Cannot load recent data successfully. Err: %v\n", err)
 	}
@@ -189,7 +189,7 @@ func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
 	if ok && len(coinMetrics.ClosePriceClosed) == fe.cfg.MarketConstants.MetricsWindowSize {
 		// Construct a dataset that includes the last MetricsWindowSize-1 closed prices and the live price
 		liveData := append(coinMetrics.ClosePriceClosed[1:], klineDatapoint.Close)
-		coinMetrics.RSILive = calculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+		coinMetrics.RSILive = numutils.CalculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
 	}
 }
 
@@ -221,7 +221,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 		return fmt.Errorf("insufficient or missing data to calculate RSI for %s", symbol)
 	}
 
-	rsi := calculateRSI(
+	rsi := numutils.CalculateRSI(
 		coinMetrics.ClosePriceClosed,
 		fe.cfg.MarketConstants.KlineInterval-1,
 	) //To get only latest RSI
@@ -257,8 +257,8 @@ func (fe *Engine) getRawCoinMetricsData(ctx context.Context, symbol string) (*mo
 	}, nil
 }
 
-func (fe *Engine) loadRecentKlineData(ctx context.Context) error {
-	for _, symbol := range fe.cfg.Symbols {
+func (fe *Engine) loadRecentKlineData(ctx context.Context, symbols []string) error {
+	for _, symbol := range symbols {
 		coinMetrics, err := fe.getRawCoinMetricsData(ctx, symbol)
 
 		if err != nil {
@@ -384,13 +384,14 @@ func (fe *Engine) evaluateKlineSignal(symbol string) {
 	}
 
 	fe.processedCoinCount++
+
 	rsiClosed, exists := fe.GetRSIClosed(symbol)
 	if !exists {
 		log.Printf("evaluateKlineSignal - %s does not have RSI closed\n", symbol)
 		return
 	}
 
-	if rsiClosed <= fe.cfg.Trader.RSIBuyValue {
+	if fe.hasSymbolBuySignal(symbol) {
 		fe.buyTradeCandidateCoins[symbol] = rsiClosed
 	}
 
@@ -442,45 +443,37 @@ func (fe *Engine) handleCycleTimeout() {
 	fe.resetCycle()
 }
 
-func calculateRSI(prices []float64, n int) float64 {
-	if len(prices) < n+1 {
-		return 0 // Not enough data to compute RSI
+func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
+	rsiClosed, rsiOk := fe.GetRSIClosed(symbol)
+	if !rsiOk {
+		log.Println("No RSI data available")
+		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
+		return false
 	}
 
-	//Compute changes for gains and losses
-	changes := make([]float64, len(prices)-1)
-	for i := 1; i < len(prices); i++ {
-		changes[i-1] = prices[i] - prices[i-1]
+	volumeMedian, volumeOk := fe.GetVolumeValueMedian(symbol)
+	if !volumeOk {
+		log.Println("No volume data available")
+		return false
 	}
 
-	// We need gains and losses to calculate RSI, if gain or loss smaller than 0 we take it as 0
-	gains := make([]float64, len(changes))
-	losses := make([]float64, len(changes))
-	for i, change := range changes {
-		if change > 0 {
-			gains[i] = change
-			losses[i] = 0.0
-		} else {
-			losses[i] = -change
-			gains[i] = 0.0
-		}
+	movingAverages, err := fe.GetMovingAverage(symbol)
+	if err != nil {
+		log.Printf("Could not retrieve MA - Err: %s\n", err)
+		return false
 	}
 
-	//Calculate exponential moving average for gains and losses
-	avgGain := numutils.ExponentialMovingAverage(gains, n)
-	avgLoss := numutils.ExponentialMovingAverage(losses, n)
-
-	// We only need the last RSI value
-	if avgLoss[len(avgLoss)-1] == 0 {
-		if avgGain[len(avgGain)-1] > 0 {
-			return 100 // Avoid division by zero and define RSI as 100 when there are no losses but gains
-		}
-		return 0 // No gains and no losses
+	if movingAverages.MA50 < movingAverages.MA100 {
+		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
+		return false
 	}
 
-	// Calculate RSI
-	rs := avgGain[len(avgGain)-1] / avgLoss[len(avgLoss)-1]
-	rsi := 100 - (100 / (1 + rs))
+	if rsiClosed > fe.cfg.Trader.RSIBuyValue {
+		return false
+	}
 
-	return rsi
+	if volumeMedian < fe.cfg.Trader.MedianVolumeThreshold {
+		return false
+	}
+	return true
 }

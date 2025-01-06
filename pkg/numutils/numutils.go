@@ -90,3 +90,46 @@ func FindMedian(values []float64) float64 {
 	// Even number of elements, return the average of the two middle values
 	return (sortedValues[midpoint-1] + sortedValues[midpoint]) / 2
 }
+
+func CalculateRSI(prices []float64, n int) float64 {
+	if len(prices) < n+1 {
+		return 0 // Not enough data to compute RSI
+	}
+
+	//Compute changes for gains and losses
+	changes := make([]float64, len(prices)-1)
+	for i := 1; i < len(prices); i++ {
+		changes[i-1] = prices[i] - prices[i-1]
+	}
+
+	// We need gains and losses to calculate RSI, if gain or loss smaller than 0 we take it as 0
+	gains := make([]float64, len(changes))
+	losses := make([]float64, len(changes))
+	for i, change := range changes {
+		if change > 0 {
+			gains[i] = change
+			losses[i] = 0.0
+		} else {
+			losses[i] = -change
+			gains[i] = 0.0
+		}
+	}
+
+	//Calculate exponential moving average for gains and losses
+	avgGain := ExponentialMovingAverage(gains, n)
+	avgLoss := ExponentialMovingAverage(losses, n)
+
+	// We only need the last RSI value
+	if avgLoss[len(avgLoss)-1] == 0 {
+		if avgGain[len(avgGain)-1] > 0 {
+			return 100 // Avoid division by zero and define RSI as 100 when there are no losses but gains
+		}
+		return 0 // No gains and no losses
+	}
+
+	// Calculate RSI
+	rs := avgGain[len(avgGain)-1] / avgLoss[len(avgLoss)-1]
+	rsi := 100 - (100 / (1 + rs))
+
+	return rsi
+}
