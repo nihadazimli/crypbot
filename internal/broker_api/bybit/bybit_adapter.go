@@ -615,7 +615,8 @@ func (ba *Adapter) StartKlineStream(
 	ctx context.Context,
 	params broker_api.KlineStreamRequestParams,
 ) error {
-	symbolChunks := chunkSymbols(params.Symbols, ba.cfg.Broker.WebSocket.MaxSymbolsPerConnection)
+	klineTopics := ba.createKlineTopics(params.Symbols, params.Interval)
+	symbolChunks := chunkSymbols(klineTopics, ba.cfg.Broker.WebSocket.MaxSymbolsPerConnection)
 	var webSockets []*websocket.WebSocketClient
 
 	for _, chunk := range symbolChunks {
@@ -919,6 +920,18 @@ func (ba *Adapter) fetchPrecisionFromAPI(
 	}
 
 	return 0, 0, fmt.Errorf("symbol %s not found in response", symbol)
+}
+
+func (ba *Adapter) createKlineTopics(symbols []string, interval int) []string {
+	var klineTopics []string
+	for _, symbol := range symbols {
+		klineTopics = append(klineTopics, constructKlineTopic(symbol, interval))
+	}
+	return klineTopics
+}
+
+func constructKlineTopic(symbol string, klineInterval int) string {
+	return "kline." + strconv.Itoa(klineInterval) + "." + symbol
 }
 
 // removeUSDTSuffix removes the "USDT" suffix from the symbol if present.

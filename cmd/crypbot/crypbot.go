@@ -33,12 +33,11 @@ func main() {
 
 	bybitAdapter := bybit.NewBybitAdapter(ctx)
 
-	fe := financial.Start(ctx, bybitAdapter, buyReady, cfg.Broker.API.Timeout)
-	go fe.ProcessKline()
+	fe := financial.Start(ctx, bybitAdapter, buyReady)
 
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 	go tc.ProcessBuySignal(ctx)
 	go tc.ProcessSellSignal(ctx)
 
-	<-ctx.Done() // Block until context is cancelled
+	<-ctx.Done()
 }

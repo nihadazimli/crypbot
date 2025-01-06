@@ -29,7 +29,6 @@ type MACache struct {
 }
 
 type EngineInterface interface {
-	ProcessKline()
 	GetRSIClosed(symbol string) (float64, bool)
 	GetRSILive(symbol string) (float64, bool)
 	GetVolumeValueMedian(symbol string) (float64, bool)
@@ -52,7 +51,7 @@ type Engine struct {
 	cycleTimer             *time.Timer
 	cycleTimeout           time.Duration
 	expectedCoinCount      int                // Total number of expected coin count in every cycle
-	processedCoinCount     int                // Tracks all processed coins count in current cycle
+	processedCoinsInCycle  map[string]bool    // Tracks all processed coins count in current cycle
 	buyTradeCandidateCoins map[string]float64 // Stores coins with buy signal in current cycle with RSI value
 }
 
@@ -99,13 +98,12 @@ func Start(
 	ctx context.Context,
 	broker broker_api.BrokerAPI,
 	buyReady chan string,
-	timeout int,
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
 	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
-	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, timeout, maCacheTimeout, len(cfg.Symbols))
+	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, cfg.Broker.API.Timeout, maCacheTimeout, len(cfg.Symbols))
 
 	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
 	if err != nil {
@@ -114,15 +112,17 @@ func Start(
 	fe.startCacheCleanup(ctx)
 
 	err = fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
-		Symbols: fe.cfg.KlineTopics, KlineWriteChan: fe.klineReceived,
+		Symbols: fe.cfg.Symbols, KlineWriteChan: fe.klineReceived, Interval: fe.cfg.MarketConstants.KlineInterval,
 	})
 	if err != nil {
 		log.Printf("Cannot start KlineStream. Err: %v\n", err)
 	}
+	go fe.processKline()
+	log.Printf("Financial Engine initialized successfully!\n")
 	return fe
 }
 
-func (fe *Engine) ProcessKline() {
+func (fe *Engine) processKline() {
 	for klineDatapoint := range fe.klineReceived {
 		if klineDatapoint.Confirm {
 			fe.processClosedKline(klineDatapoint)
@@ -277,8 +277,6 @@ func (fe *Engine) getDefaultMissingDataValue() float64 {
 	return fe.cfg.Defaults.MissingDataValue
 }
 func (fe *Engine) Show() {
-	//var prevClosedRsi float64
-	// Extract and sort the keys (symbols) from the Coins map
 	var symbols []string
 	for symbol := range fe.Coins {
 		symbols = append(symbols, symbol)
@@ -289,7 +287,6 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			//if metrics.RSIClosed < 21 && prevClosedRsi != metrics.RSIClosed {
 			log.Printf(
 				"%s L: %.2f C: %.2f V: %.2f CP: %.2f\n",
 				symbol,
@@ -298,8 +295,6 @@ func (fe *Engine) Show() {
 				metrics.VolumeValueMedian,
 				metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
 			)
-			//prevClosedRsi = metrics.RSIClosed
-			//}
 		}
 
 		time.Sleep(10 * time.Second) // Update frequency; adjust as needed
@@ -373,7 +368,7 @@ func (fe *Engine) evaluateKlineSignal(symbol string) {
 	defer fe.cycleMutex.Unlock()
 
 	// Start the timer if it is the first coin to process
-	if fe.processedCoinCount == 0 {
+	if len(fe.processedCoinsInCycle) == 0 {
 		if fe.cycleTimer != nil {
 			fe.cycleTimer.Stop()
 		}
@@ -383,7 +378,7 @@ func (fe *Engine) evaluateKlineSignal(symbol string) {
 		})
 	}
 
-	fe.processedCoinCount++
+	fe.processedCoinsInCycle[symbol] = true
 
 	rsiClosed, exists := fe.GetRSIClosed(symbol)
 	if !exists {
@@ -395,7 +390,7 @@ func (fe *Engine) evaluateKlineSignal(symbol string) {
 		fe.buyTradeCandidateCoins[symbol] = rsiClosed
 	}
 
-	if fe.processedCoinCount >= fe.expectedCoinCount {
+	if len(fe.processedCoinsInCycle) >= fe.expectedCoinCount {
 		fe.selectAndSignal()
 		fe.resetCycle()
 	}
@@ -403,7 +398,7 @@ func (fe *Engine) evaluateKlineSignal(symbol string) {
 }
 
 func (fe *Engine) resetCycle() {
-	fe.processedCoinCount = 0
+	fe.processedCoinsInCycle = make(map[string]bool)
 	fe.buyTradeCandidateCoins = make(map[string]float64)
 	if fe.cycleTimer != nil {
 		fe.cycleTimer.Stop()
@@ -436,9 +431,24 @@ func (fe *Engine) selectAndSignal() {
 func (fe *Engine) handleCycleTimeout() {
 	fe.cycleMutex.Lock()
 	defer fe.cycleMutex.Unlock()
+	var missingCoins []string
+	for _, symbol := range fe.cfg.Symbols {
+		if !fe.processedCoinsInCycle[symbol] {
+			missingCoins = append(missingCoins, symbol)
+		}
+	}
+	// Try to load data for missing coins
+	if len(missingCoins) > 0 {
+		log.Printf("handleCycleTimeout - Attempting to load data for missing coins: %v\n", missingCoins)
+		err := fe.loadRecentKlineData(context.Background(), missingCoins)
+		if err != nil {
+			log.Printf("handleCycleTimeout - Failed to load missing data: %v\n", err)
+		}
+	}
 
 	log.Printf("handleCycleTimeout - Cycle timeout reached. Processed %d out of %d coins\n",
-		fe.processedCoinCount, fe.expectedCoinCount)
+		len(fe.processedCoinsInCycle), fe.expectedCoinCount)
+
 	fe.selectAndSignal()
 	fe.resetCycle()
 }

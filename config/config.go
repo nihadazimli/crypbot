@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"gopkg.in/yaml.v2"
 )
@@ -100,25 +99,10 @@ func loadFromYaml() (*Config, error) {
 		return nil, err
 	}
 
-	// Derive topics from symbols
-	config.initializeKlineTopics()
-
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
 	return &config, nil
-}
-
-// TODO: Move kline topic generator functions inside of bybit adapter
-func createKlineTopics(klineInterval int, symbol string) string {
-	return "kline." + strconv.Itoa(klineInterval) + "." + symbol
-}
-
-func (c *Config) initializeKlineTopics() {
-	c.KlineTopics = make([]string, len(c.Symbols))
-	for i, symbol := range c.Symbols {
-		c.KlineTopics[i] = createKlineTopics(c.MarketConstants.KlineInterval, symbol)
-	}
 }
 
 func (c *Config) validate() error {

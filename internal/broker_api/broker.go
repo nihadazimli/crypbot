@@ -56,6 +56,7 @@ type AccountBalanceResult struct {
 type KlineStreamRequestParams struct {
 	Symbols        []string
 	KlineWriteChan chan model.WSInternalKline
+	Interval       int
 }
 
 type BuyOrderResultDetails struct {
