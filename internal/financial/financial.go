@@ -34,7 +34,7 @@ type EngineInterface interface {
 	GetRSILive(symbol string) (float64, bool)
 	GetVolumeValueMedian(symbol string) (float64, bool)
 	GetCurrentPrice(symbol string) (float64, bool)
-	GetMovingAverage(symbol string) (model.MovingAverage, error)
+	GetMovingAverages(symbol string) (model.MovingAverage, error)
 	Show()
 }
 
@@ -56,11 +56,11 @@ type Engine struct {
 	buyTradeCandidateCoins map[string]float64 // Stores coins with buy signal in current cycle with RSI value
 }
 
-func (fe *Engine) GetMovingAverage(symbol string) (model.MovingAverage, error) {
+func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) {
 
 	maData, err := fe.getMovingAverage(symbol)
 	if err != nil {
-		return model.MovingAverage{}, fmt.Errorf("GetMovingAverage - %s - Err: %v", err)
+		return model.MovingAverage{}, fmt.Errorf("GetMovingAverages - %s - Err: %v", err)
 	}
 
 	return model.MovingAverage{
@@ -457,7 +457,7 @@ func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
 		return false
 	}
 
-	movingAverages, err := fe.GetMovingAverage(symbol)
+	movingAverages, err := fe.GetMovingAverages(symbol)
 	if err != nil {
 		log.Printf("Could not retrieve MA - Err: %s\n", err)
 		return false

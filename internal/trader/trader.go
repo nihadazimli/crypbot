@@ -398,7 +398,7 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 		return BuyConditionCancel
 	}
 
-	movingAverages, err := tc.financial.GetMovingAverage(symbol)
+	movingAverages, err := tc.financial.GetMovingAverages(symbol)
 	if err != nil {
 		log.Printf("Could not retrieve MA - Err: %s\n", err)
 		return BuyConditionCancel
