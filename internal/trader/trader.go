@@ -149,7 +149,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder broker_api.B
 					}
 					amendedOrder, err := tc.broker.AmendOrder(ctx, params)
 					if err != nil {
-						if errors.Is(err, broker_api.ErrQuantityTooLow) {
+						if errors.Is(err, broker_api.AmendErrQuantityTooLow) {
 							cancelParams := broker_api.CancelOrderRequestParams{OrderId: amendedOrder.OrderId, Symbol: symbol}
 							_, err = tc.broker.CancelOrder(ctx, cancelParams)
 							if err != nil {
@@ -159,6 +159,8 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder broker_api.B
 								"Monitor buy order - Partially Filled order %s cancelled due to low remaining qty\n",
 								amendedOrder.OrderId,
 							)
+						} else if errors.Is(err, broker_api.AmendErrUnchangedParams) {
+							continue
 						} else {
 							return fmt.Errorf("monitor buy order - Cannot Amend Order. Unhandled err: %v", err)
 
@@ -358,8 +360,11 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			}
 			order, err := tc.broker.AmendOrder(ctx, params)
 			if err != nil {
-				log.Printf("Cannot Amend Order. Err: %s\n", err)
-				continue
+				if errors.Is(err, broker_api.AmendErrUnchangedParams) {
+					continue
+				} else {
+					log.Printf("Execute sell order - Cannot Amend Order. Unhandled err: %v", err)
+				}
 			}
 			log.Printf("Order Id %s is amended successfully\n", order.OrderId)
 
@@ -420,7 +425,7 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	}
 
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
-		log.Println("RSILive too big")
+		log.Printf("RSI live is bigger than Araz's IQ. RSI Live:%.2f Araz's IQ: %v", rsiLive, tc.cfg.Trader.RSIBuyValue)
 		return BuyConditionWait
 	}
 

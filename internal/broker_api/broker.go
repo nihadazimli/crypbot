@@ -148,5 +148,6 @@ type OpenOrderRequestParams struct {
 }
 
 var (
-	ErrQuantityTooLow = errors.New("quantity below minimum required")
+	AmendErrQuantityTooLow  = errors.New("quantity below minimum required")
+	AmendErrUnchangedParams = errors.New("unchanged parameters for amend")
 )

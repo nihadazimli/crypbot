@@ -87,7 +87,8 @@ var orderStatusMap = map[string]broker_api.OrderStatus{
 }
 
 const (
-	ErrCodeQuantityTooLow = 170136
+	AmendOrderErrCodeQuantityTooLow      = 170136
+	AmendOrderErrCodeUnchangedParameters = 10001
 )
 
 type Adapter struct {
@@ -476,8 +477,10 @@ func (ba *Adapter) AmendOrder(
 		return broker_api.AmendOrderResult{}, err
 	}
 
-	if response.RetCode == ErrCodeQuantityTooLow { // Use the constant here
-		return broker_api.AmendOrderResult{}, fmt.Errorf("order quantity too low: %w", broker_api.ErrQuantityTooLow)
+	if response.RetCode == AmendOrderErrCodeQuantityTooLow { // Use the constant here
+		return broker_api.AmendOrderResult{}, fmt.Errorf("order quantity too low. err: %w", broker_api.AmendErrQuantityTooLow)
+	} else if response.RetCode == AmendOrderErrCodeUnchangedParameters {
+		return broker_api.AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", broker_api.AmendErrUnchangedParams, params)
 	} else if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
