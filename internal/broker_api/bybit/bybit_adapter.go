@@ -89,6 +89,7 @@ var orderStatusMap = map[string]broker_api.OrderStatus{
 const (
 	AmendOrderErrCodeQuantityTooLow      = 170136
 	AmendOrderErrCodeUnchangedParameters = 10001
+	AmendOrderErrOrderDoesNotExist       = 170213
 )
 
 type Adapter struct {
@@ -481,6 +482,8 @@ func (ba *Adapter) AmendOrder(
 		return broker_api.AmendOrderResult{}, fmt.Errorf("order quantity too low. err: %w", broker_api.AmendErrQuantityTooLow)
 	} else if response.RetCode == AmendOrderErrCodeUnchangedParameters {
 		return broker_api.AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", broker_api.AmendErrUnchangedParams, params)
+	} else if response.RetCode == AmendOrderErrOrderDoesNotExist {
+		return broker_api.AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", broker_api.AmendErrOrderDoesNotExist, params)
 	} else if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
@@ -542,7 +545,8 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params broker_api.KlineH
 
 	var apiResponse model.KlineApiResponse
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("error unmarshaling JSON: %w", err)
+		return broker_api.KlineHistoryResult{}, fmt.Errorf("error unmarshaling JSON. Respomse: %v Err: %w",
+			apiResponse, err)
 	}
 
 	if len(apiResponse.Result.List) < 1 {

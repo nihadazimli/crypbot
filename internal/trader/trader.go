@@ -362,6 +362,14 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			if err != nil {
 				if errors.Is(err, broker_api.AmendErrUnchangedParams) {
 					continue
+				} else if errors.Is(err, broker_api.AmendErrOrderDoesNotExist) {
+					log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
+					err := tc.gracefullyFinishBuyOrder(ctx, symbol)
+					if err != nil {
+						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+						return false
+					}
+					return true
 				} else {
 					log.Printf("Execute sell order - Cannot Amend Order. Unhandled err: %v", err)
 				}
