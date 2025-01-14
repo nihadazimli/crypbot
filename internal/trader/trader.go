@@ -165,7 +165,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder broker_api.B
 							return fmt.Errorf("monitor buy order - Cannot Amend Order. Unhandled err: %v", err)
 
 						}
-						err = tc.gracefullyFinishBuyOrder(ctx, symbol)
+						err = tc.gracefullyFinishOrder(ctx, symbol)
 						if err != nil {
 							return fmt.Errorf("monitor buy order - %v", err)
 						}
@@ -179,7 +179,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder broker_api.B
 					if err != nil {
 						return fmt.Errorf("monitor buy order - cannot cancel conditions failed order. Err:%v", err)
 					}
-					err = tc.gracefullyFinishBuyOrder(ctx, symbol)
+					err = tc.gracefullyFinishOrder(ctx, symbol)
 					if err != nil {
 						return fmt.Errorf("monitor buy order - %v", err)
 					}
@@ -187,14 +187,14 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder broker_api.B
 				}
 
 			case broker_api.Invalid, broker_api.Canceled:
-				err = tc.gracefullyFinishBuyOrder(ctx, symbol)
+				err = tc.gracefullyFinishOrder(ctx, symbol)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
 				}
 				return nil
 			default:
 				log.Printf("Order Status: %v This status is not handled\n", orderStatus)
-				err = tc.gracefullyFinishBuyOrder(ctx, symbol)
+				err = tc.gracefullyFinishOrder(ctx, symbol)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
 				}
@@ -364,7 +364,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					continue
 				} else if errors.Is(err, broker_api.AmendErrOrderDoesNotExist) {
 					log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
-					err := tc.gracefullyFinishBuyOrder(ctx, symbol)
+					err := tc.gracefullyFinishOrder(ctx, symbol)
 					if err != nil {
 						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
 						return false
@@ -597,7 +597,7 @@ func (tc *Trader) getBestAskPrice(ctx context.Context, symbol string) (float64, 
 	return bestAskPrice, nil
 }
 
-func (tc *Trader) gracefullyFinishBuyOrder(ctx context.Context, symbol string) error {
+func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) error {
 	coinBalance, err := tc.broker.GetSymbolBalance(ctx, symbol)
 	if err != nil {
 		return err
