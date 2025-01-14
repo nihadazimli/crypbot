@@ -604,7 +604,8 @@ func (tc *Trader) gracefullyFinishBuyOrder(ctx context.Context, symbol string) e
 	}
 
 	if coinBalance.UsdValue > 1 {
-		tc.triggerSell(symbol)
+		tc.activeOrders[symbol] = 1
+		tc.executeSellOrder(ctx, symbol)
 	}
 	return nil
 }

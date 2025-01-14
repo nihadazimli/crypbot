@@ -483,7 +483,8 @@ func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
+		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f) for %s\n",
+			movingAverages.MA50, movingAverages.MA100, symbol)
 		return false
 	}
 
