@@ -109,7 +109,7 @@ func NewBybitAdapter(ctx context.Context) *Adapter {
 		BybitClient: bybit.NewBybitHttpClient(
 			cfg.Broker.API.Key,
 			cfg.Broker.API.Secret,
-			bybit.WithBaseURL(bybit.MAINNET),
+			bybit.WithBaseURL(cfg.Broker.API.Host),
 		),
 		cfg:          cfg,
 		precision:    make(map[string]model.Precision),
@@ -138,6 +138,10 @@ func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBal
 	}
 
 	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
+
+	if err != nil {
+		return broker_api.AccountBalanceResult{}, err
+	}
 
 	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }

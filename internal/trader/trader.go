@@ -94,7 +94,21 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	}
 
 }
+func (tc *Trader) BuyCoin(ctx context.Context, symbol string) error {
+	err := tc.placeBuyOrderAndMonitor(ctx, symbol)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func (tc *Trader) SellCoin(ctx context.Context, symbol string) error {
+	result := tc.executeSellOrder(ctx, symbol)
+	if result != true {
+		return fmt.Errorf("cant sell coin")
+	}
+	return nil
+}
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
 	err := tc.broker.StartOrderStream()
 	if err != nil {
