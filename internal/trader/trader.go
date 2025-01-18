@@ -329,6 +329,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 		select {
 		case <-ctx.Done():
 			log.Println("Stopping executing sell order")
+			return false
 		case <-sellTicker.C:
 			orderStatus, err := tc.broker.GetOrderStatus(ctx, order.Details.OrderId)
 
