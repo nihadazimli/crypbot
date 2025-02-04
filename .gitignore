@@ -22,5 +22,6 @@ config/config.yaml
 go.work
 go.work.sum
 
-
+.DS_Store
 .idea
+docs

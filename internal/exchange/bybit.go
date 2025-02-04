@@ -1,5 +1,5 @@
-// Package bybit implements broker_api interface for specific broker called Bybit
-package bybit
+// Package bybit implements exchange interface for specific exchange called Bybit
+package exchange
 
 import (
 	"context"
@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/broker_api"
 	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/pkg/numutils"
 	"github.com/nihadazimli/crypbot/pkg/websocket"
@@ -38,7 +37,7 @@ type OrderInfo struct {
 	Qty       string
 	LeavesQty string
 	Symbol    string
-	Status    broker_api.OrderStatus
+	Status    OrderStatus
 }
 
 type InstrumentResult struct {
@@ -74,16 +73,16 @@ type OrderBookResponse struct {
 	UpdateID  int64            `json:"u"`
 }
 
-var orderStatusMap = map[string]broker_api.OrderStatus{
-	"Filled":                  broker_api.Filled,
-	"Cancelled":               broker_api.Canceled,
-	"Rejected":                broker_api.Canceled,
-	"PartiallyFilled":         broker_api.PartiallyFilled,
-	"Untriggered":             broker_api.Open,
-	"New":                     broker_api.Open,
-	"Triggered":               broker_api.Open,
-	"Deactivated":             broker_api.Canceled,
-	"PartiallyFilledCanceled": broker_api.PartiallyFilledCancelled,
+var orderStatusMap = map[string]OrderStatus{
+	"Filled":                  Filled,
+	"Cancelled":               Canceled,
+	"Rejected":                Canceled,
+	"PartiallyFilled":         PartiallyFilled,
+	"Untriggered":             Open,
+	"New":                     Open,
+	"Triggered":               Open,
+	"Deactivated":             Canceled,
+	"PartiallyFilledCanceled": PartiallyFilledCancelled,
 }
 
 const (
@@ -96,7 +95,7 @@ type Adapter struct {
 	BybitClient           *bybit.Client
 	cfg                   *config.Config
 	orderWebsocket        *websocket.WebSocketClient
-	activeOrders          map[string]broker_api.ActiveOrderTracker
+	activeOrders          map[string]ActiveOrderTracker
 	klineWriteChan        chan model.WSInternalKline
 	precision             map[string]model.Precision
 	precisionMutex        sync.RWMutex
@@ -107,26 +106,26 @@ func NewBybitAdapter(ctx context.Context) *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
 		BybitClient: bybit.NewBybitHttpClient(
-			cfg.Broker.API.Key,
-			cfg.Broker.API.Secret,
-			bybit.WithBaseURL(cfg.Broker.API.Host),
+			cfg.Exchange.API.Key,
+			cfg.Exchange.API.Secret,
+			bybit.WithBaseURL(cfg.Exchange.API.Host),
 		),
 		cfg:          cfg,
 		precision:    make(map[string]model.Precision),
-		activeOrders: make(map[string]broker_api.ActiveOrderTracker),
+		activeOrders: make(map[string]ActiveOrderTracker),
 	}
 	ba.orderWebsocket = websocket.NewWebSocketClientPrivate(
 		ctx,
-		ba.cfg.Broker.WebSocket.AddressPrivate,
-		ba.cfg.Broker.API.Key,
-		ba.cfg.Broker.API.Secret,
-		ba.cfg.Broker.WebSocket.PingInterval,
+		ba.cfg.Exchange.WebSocket.AddressPrivate,
+		ba.cfg.Exchange.API.Key,
+		ba.cfg.Exchange.API.Secret,
+		ba.cfg.Exchange.WebSocket.PingInterval,
 		ba.handlePrivateWSMessages,
 	)
 	return ba
 }
 
-func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBalanceResult, error) {
+func (ba *Adapter) GetAccountBalance(ctx context.Context) (AccountBalanceResult, error) {
 	requestParams := map[string]interface{}{
 		"accountType": "UNIFIED",
 	}
@@ -134,16 +133,16 @@ func (ba *Adapter) GetAccountBalance(ctx context.Context) (broker_api.AccountBal
 	walletResult, err := ba.getWalletResult(ctx, requestParams)
 
 	if err != nil {
-		return broker_api.AccountBalanceResult{}, err
+		return AccountBalanceResult{}, err
 	}
 
 	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
 
 	if err != nil {
-		return broker_api.AccountBalanceResult{}, err
+		return AccountBalanceResult{}, err
 	}
 
-	return broker_api.AccountBalanceResult{Total: totalAvailableBalance}, nil
+	return AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
 
 func (ba *Adapter) getWalletResult(
@@ -170,11 +169,11 @@ func (ba *Adapter) getWalletResult(
 
 func (ba *Adapter) PlaceBuyOrder(
 	ctx context.Context,
-	params broker_api.BuyOrderRequestParams,
-) (broker_api.BuyOrderResult, error) {
+	params BuyOrderRequestParams,
+) (BuyOrderResult, error) {
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.BuyOrderResult{}, fmt.Errorf(
+		return BuyOrderResult{}, fmt.Errorf(
 			"PlaceBuyOrder - failed to get precision: %w",
 			err,
 		)
@@ -197,7 +196,7 @@ func (ba *Adapter) PlaceBuyOrder(
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
-		return broker_api.BuyOrderResult{}, err
+		return BuyOrderResult{}, err
 	}
 
 	// Check if the response indicates success
@@ -208,7 +207,7 @@ func (ba *Adapter) PlaceBuyOrder(
 		} else {
 			log.Printf("\nError: Place Buy Order\nFull response: %s\nParams: %s\n", string(responseJSON), requestParams)
 		}
-		return broker_api.BuyOrderResult{}, fmt.Errorf(
+		return BuyOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
 			response.RetCode,
 			response.RetMsg,
@@ -218,21 +217,21 @@ func (ba *Adapter) PlaceBuyOrder(
 	// Handling the Result field which is interface{}
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {
-		return broker_api.BuyOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+		return BuyOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
-	var buyDetails broker_api.BuyOrderResultDetails
+	var buyDetails BuyOrderResultDetails
 	err = json.Unmarshal(resultData, &buyDetails)
 	if err != nil {
-		return broker_api.BuyOrderResult{}, fmt.Errorf(
+		return BuyOrderResult{}, fmt.Errorf(
 			"error unmarshalling result to BuyOrderResultDetails: %s",
 			err,
 		)
 	}
 
-	return broker_api.BuyOrderResult{
+	return BuyOrderResult{
 		Success: true,
-		Details: broker_api.BuyOrderResultDetails{
+		Details: BuyOrderResultDetails{
 			OrderId:     buyDetails.OrderId,
 			OrderLinkId: buyDetails.OrderLinkId,
 		},
@@ -241,8 +240,8 @@ func (ba *Adapter) PlaceBuyOrder(
 
 func (ba *Adapter) GetOrderBook(
 	ctx context.Context,
-	params broker_api.OrderBookRequestParams,
-) (broker_api.OrderBookResult, error) {
+	params OrderBookRequestParams,
+) (OrderBookResult, error) {
 	requestParams := map[string]interface{}{
 		"symbol":   params.Symbol,
 		"limit":    params.Limit,
@@ -252,7 +251,7 @@ func (ba *Adapter) GetOrderBook(
 
 	response, err := orderBookService.GetOrderBookInfo(ctx)
 	if err != nil {
-		return broker_api.OrderBookResult{}, fmt.Errorf(
+		return OrderBookResult{}, fmt.Errorf(
 			"cannot fetch orderbook\n symbol:%s\nerr:%v",
 			params.Symbol,
 			err,
@@ -267,7 +266,7 @@ func (ba *Adapter) GetOrderBook(
 		} else {
 			log.Printf("Error: Get Order Book\nFull response: %s\n", string(responseJSON))
 		}
-		return broker_api.OrderBookResult{}, fmt.Errorf(
+		return OrderBookResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
 			response.RetCode,
 			response.RetMsg,
@@ -276,33 +275,33 @@ func (ba *Adapter) GetOrderBook(
 
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {
-		return broker_api.OrderBookResult{}, fmt.Errorf("error marshalling result data: %s", err)
+		return OrderBookResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
 	var orderBookResponse OrderBookResponse
 	err = json.Unmarshal(resultData, &orderBookResponse)
 	if err != nil {
-		return broker_api.OrderBookResult{}, fmt.Errorf(
+		return OrderBookResult{}, fmt.Errorf(
 			"error unmarshalling result to OrderBookResponse: %s",
 			err,
 		)
 	}
 
-	var all_asks []broker_api.OrderBookDetail
-	var all_bids []broker_api.OrderBookDetail
+	var all_asks []OrderBookDetail
+	var all_bids []OrderBookDetail
 	for _, ask := range orderBookResponse.Asks {
 		price, _ := strconv.ParseFloat(ask[0], 64)
 		qty, _ := strconv.ParseFloat(ask[1], 64)
 
-		all_asks = append(all_asks, broker_api.OrderBookDetail{Price: price, Quantity: qty})
+		all_asks = append(all_asks, OrderBookDetail{Price: price, Quantity: qty})
 	}
 	for _, bid := range orderBookResponse.Bids {
 		price, _ := strconv.ParseFloat(bid[0], 64)
 		qty, _ := strconv.ParseFloat(bid[1], 64)
-		all_bids = append(all_bids, broker_api.OrderBookDetail{Price: price, Quantity: qty})
+		all_bids = append(all_bids, OrderBookDetail{Price: price, Quantity: qty})
 	}
 
-	return broker_api.OrderBookResult{
+	return OrderBookResult{
 		Ask: all_asks,
 		Bid: all_bids,
 	}, nil
@@ -310,12 +309,12 @@ func (ba *Adapter) GetOrderBook(
 
 func (ba *Adapter) PlaceSellOrder(
 	ctx context.Context,
-	params broker_api.SellOrderRequestParams,
-) (broker_api.SellOrderResult, error) {
+	params SellOrderRequestParams,
+) (SellOrderResult, error) {
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.SellOrderResult{}, fmt.Errorf(
+		return SellOrderResult{}, fmt.Errorf(
 			"PlaceSellOrder - failed to get precision: %w",
 			err,
 		)
@@ -338,7 +337,7 @@ func (ba *Adapter) PlaceSellOrder(
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
-		return broker_api.SellOrderResult{}, err
+		return SellOrderResult{}, err
 	}
 
 	// Check if the response indicates success
@@ -349,7 +348,7 @@ func (ba *Adapter) PlaceSellOrder(
 		} else {
 			log.Printf("Error: Place Sell Order\nFull response: %s\n", string(responseJSON))
 		}
-		return broker_api.SellOrderResult{}, fmt.Errorf(
+		return SellOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
 			response.RetCode,
 			response.RetMsg,
@@ -359,21 +358,21 @@ func (ba *Adapter) PlaceSellOrder(
 	// Handling the Result field which is interface{}
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {
-		return broker_api.SellOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+		return SellOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
-	var sellDetails broker_api.SellOrderResultDetails
+	var sellDetails SellOrderResultDetails
 	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
-		return broker_api.SellOrderResult{}, fmt.Errorf(
+		return SellOrderResult{}, fmt.Errorf(
 			"error unmarshalling result to BuyOrderResultDetails: %s",
 			err,
 		)
 	}
 
-	return broker_api.SellOrderResult{
+	return SellOrderResult{
 		Success: true,
-		Details: broker_api.SellOrderResultDetails{
+		Details: SellOrderResultDetails{
 			OrderId:     sellDetails.OrderId,
 			OrderLinkId: sellDetails.OrderLinkId,
 		},
@@ -404,8 +403,8 @@ func (ba *Adapter) CancelAllTPSLOrders(ctx context.Context, symbol string) error
 
 func (ba *Adapter) CancelOrder(
 	ctx context.Context,
-	params broker_api.CancelOrderRequestParams,
-) (broker_api.CancelOrderResult, error) {
+	params CancelOrderRequestParams,
+) (CancelOrderResult, error) {
 	requestParams := map[string]interface{}{
 		"category": "spot",
 		"symbol":   params.Symbol,
@@ -414,7 +413,7 @@ func (ba *Adapter) CancelOrder(
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).CancelOrder(ctx)
 
 	if err != nil {
-		return broker_api.CancelOrderResult{}, err
+		return CancelOrderResult{}, err
 	}
 
 	// Check if the response indicates success
@@ -425,7 +424,7 @@ func (ba *Adapter) CancelOrder(
 		} else {
 			log.Printf("Error: Cancel Order\nFull response: %s\n", string(responseJSON))
 		}
-		return broker_api.CancelOrderResult{}, fmt.Errorf(
+		return CancelOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
 			response.RetCode,
 			response.RetMsg,
@@ -435,19 +434,19 @@ func (ba *Adapter) CancelOrder(
 	resultData, err := json.Marshal(response.Result)
 
 	if err != nil {
-		return broker_api.CancelOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+		return CancelOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
-	var cancelOrderDetails broker_api.CancelOrderResult
+	var cancelOrderDetails CancelOrderResult
 	err = json.Unmarshal(resultData, &cancelOrderDetails)
 
-	return broker_api.CancelOrderResult{OrderId: cancelOrderDetails.OrderId}, nil
+	return CancelOrderResult{OrderId: cancelOrderDetails.OrderId}, nil
 
 }
 
 func (ba *Adapter) AmendOrder(
 	ctx context.Context,
-	params broker_api.AmendOrderRequestParams,
-) (broker_api.AmendOrderResult, error) {
+	params AmendOrderRequestParams,
+) (AmendOrderResult, error) {
 	requestParams := make(map[string]interface{})
 	requestParams["category"] = "spot"
 	requestParams["symbol"] = params.Symbol
@@ -455,7 +454,7 @@ func (ba *Adapter) AmendOrder(
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
-		return broker_api.AmendOrderResult{}, fmt.Errorf(
+		return AmendOrderResult{}, fmt.Errorf(
 			"AmendOrder - failed to get precision: %w",
 			err,
 		)
@@ -479,15 +478,15 @@ func (ba *Adapter) AmendOrder(
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).AmendOrder(ctx)
 
 	if err != nil {
-		return broker_api.AmendOrderResult{}, err
+		return AmendOrderResult{}, err
 	}
 
 	if response.RetCode == AmendOrderErrCodeQuantityTooLow { // Use the constant here
-		return broker_api.AmendOrderResult{}, fmt.Errorf("order quantity too low. err: %w", broker_api.AmendErrQuantityTooLow)
+		return AmendOrderResult{}, fmt.Errorf("order quantity too low. err: %w", AmendErrQuantityTooLow)
 	} else if response.RetCode == AmendOrderErrCodeUnchangedParameters {
-		return broker_api.AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", broker_api.AmendErrUnchangedParams, params)
+		return AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", AmendErrUnchangedParams, params)
 	} else if response.RetCode == AmendOrderErrOrderDoesNotExist {
-		return broker_api.AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", broker_api.AmendErrOrderDoesNotExist, params)
+		return AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", AmendErrOrderDoesNotExist, params)
 	} else if response.RetCode != 0 {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
@@ -495,7 +494,7 @@ func (ba *Adapter) AmendOrder(
 		} else {
 			log.Printf("\nError: Amend Order\nFull response: %s\nparams:%s\n", string(responseJSON), requestParams)
 		}
-		return broker_api.AmendOrderResult{}, fmt.Errorf(
+		return AmendOrderResult{}, fmt.Errorf(
 			"API error. Code: %v Error: %s",
 			response.RetCode,
 			response.RetMsg,
@@ -504,13 +503,13 @@ func (ba *Adapter) AmendOrder(
 
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {
-		return broker_api.AmendOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
+		return AmendOrderResult{}, fmt.Errorf("error marshalling result data: %s", err)
 	}
 
-	var details broker_api.AmendOrderResult
+	var details AmendOrderResult
 	err = json.Unmarshal(resultData, &details)
 	if err != nil {
-		return broker_api.AmendOrderResult{}, fmt.Errorf(
+		return AmendOrderResult{}, fmt.Errorf(
 			"error unmarshalling result to AmendOrderResultDetails: %s",
 			err,
 		)
@@ -518,7 +517,7 @@ func (ba *Adapter) AmendOrder(
 	return details, nil
 }
 
-func (ba *Adapter) GetKlineHistory(ctx context.Context, params broker_api.KlineHistoryParams) (broker_api.KlineHistoryResult, error) {
+func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error) {
 	startTime, endTime := determineTimeInterval(params.Limit, params.Interval)
 
 	requestParams := map[string]string{
@@ -530,31 +529,31 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params broker_api.KlineH
 		"limit":    strconv.Itoa(params.Limit + 1),
 	}
 
-	requestUrl := buildUrl(ba.cfg.Broker.API.Host, ba.cfg.Broker.API.RequestPaths.Kline, requestParams)
+	requestUrl := buildUrl(ba.cfg.Exchange.API.Host, ba.cfg.Exchange.API.RequestPaths.Kline, requestParams)
 	req, err := http.NewRequestWithContext(ctx, "GET", requestUrl, nil)
 	if err != nil {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("error creating request for kline data: %w", err)
+		return KlineHistoryResult{}, fmt.Errorf("error creating request for kline data: %w", err)
 	}
 
 	response, err := ba.BybitClient.HTTPClient.Do(req)
 	if err != nil {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("error fetching kline data: %w", err)
+		return KlineHistoryResult{}, fmt.Errorf("error fetching kline data: %w", err)
 	}
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("error reading response body: %w", err)
+		return KlineHistoryResult{}, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	var apiResponse model.KlineApiResponse
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("error unmarshaling JSON. Respomse: %v Err: %w",
+		return KlineHistoryResult{}, fmt.Errorf("error unmarshaling JSON. Respomse: %v Err: %w",
 			apiResponse, err)
 	}
 
 	if len(apiResponse.Result.List) < 1 {
-		return broker_api.KlineHistoryResult{}, fmt.Errorf("no kline data available for symbol: %s", params.Symbol)
+		return KlineHistoryResult{}, fmt.Errorf("no kline data available for symbol: %s", params.Symbol)
 	}
 
 	// Extract the 5th value (close price) from each list
@@ -571,26 +570,26 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params broker_api.KlineH
 	reverse(volumeValues)
 
 	// Eliminate live value, just return most recent closed values
-	return broker_api.KlineHistoryResult{ClosePrices: closePrices[:len(closePrices)-1], Volumes: volumeValues[:len(volumeValues)-1]}, nil
+	return KlineHistoryResult{ClosePrices: closePrices[:len(closePrices)-1], Volumes: volumeValues[:len(volumeValues)-1]}, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (broker_api.OrderStatus, error) {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error) {
 	if order, exists := ba.activeOrders[orderId]; exists {
 		return order.Status, nil
 	}
 
-	openOrderParams := broker_api.OpenOrderRequestParams{OrderId: orderId}
+	openOrderParams := OpenOrderRequestParams{OrderId: orderId}
 	order, err := ba.getOpenOrder(ctx, openOrderParams)
 
 	if err != nil {
-		return broker_api.Invalid, err
+		return Invalid, err
 	}
 
 	return order.Status, nil
 
 }
 
-func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (broker_api.SymbolBalanceResult, error) {
+func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (SymbolBalanceResult, error) {
 	baseCoin := removeUSDTSuffix(symbol)
 
 	requestParams := map[string]interface{}{
@@ -600,22 +599,22 @@ func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (broker_
 
 	walletResult, err := ba.getWalletResult(ctx, requestParams)
 	if err != nil {
-		return broker_api.SymbolBalanceResult{}, err
+		return SymbolBalanceResult{}, err
 	}
 
 	if len(walletResult.List[0].Coin) == 0 {
-		return broker_api.SymbolBalanceResult{}, fmt.Errorf("cannot get balance for coin %s", symbol)
+		return SymbolBalanceResult{}, fmt.Errorf("cannot get balance for coin %s", symbol)
 	}
 
 	totalSymbolBalance, err := strconv.ParseFloat(walletResult.List[0].Coin[0].WalletBalance, 64)
 	if err != nil {
-		return broker_api.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
+		return SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
 	}
 	usdValue, err := strconv.ParseFloat(walletResult.List[0].Coin[0].UsdValue, 64)
 	if err != nil {
-		return broker_api.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
+		return SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
 	}
-	symbolBalanceResponse := broker_api.SymbolBalanceResult{
+	symbolBalanceResponse := SymbolBalanceResult{
 		WalletBalance: totalSymbolBalance,
 		UsdValue:      usdValue,
 	}
@@ -624,17 +623,17 @@ func (ba *Adapter) GetSymbolBalance(ctx context.Context, symbol string) (broker_
 
 func (ba *Adapter) StartKlineStream(
 	ctx context.Context,
-	params broker_api.KlineStreamRequestParams,
+	params KlineStreamRequestParams,
 ) error {
 	klineTopics := ba.createKlineTopics(params.Symbols, params.Interval)
-	symbolChunks := chunkSymbols(klineTopics, ba.cfg.Broker.WebSocket.MaxSymbolsPerConnection)
+	symbolChunks := chunkSymbols(klineTopics, ba.cfg.Exchange.WebSocket.MaxSymbolsPerConnection)
 	var webSockets []*websocket.WebSocketClient
 
 	for _, chunk := range symbolChunks {
 		ws := websocket.NewWebSocketClientPublic(
 			ctx,
-			ba.cfg.Broker.WebSocket.AddressPublic,
-			ba.cfg.Broker.WebSocket.PingInterval,
+			ba.cfg.Exchange.WebSocket.AddressPublic,
+			ba.cfg.Exchange.WebSocket.PingInterval,
 			ba.handleKlineMessages,
 		)
 		ba.klineWriteChan = params.KlineWriteChan
@@ -763,7 +762,7 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	}
 
 	for _, order := range orders {
-		var orderState broker_api.ActiveOrderTracker
+		var orderState ActiveOrderTracker
 
 		orderStatus, ok := parseOrderStatus(order.OrderStatus)
 
@@ -771,14 +770,14 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 			return fmt.Errorf("bybit adapter - Unhandled Order Status. Status: %s", order.OrderStatus)
 		}
 
-		if orderStatus == broker_api.PartiallyFilled {
+		if orderStatus == PartiallyFilled {
 			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
 			if err != nil {
 				return fmt.Errorf("bybit adapter - Err: %v", err)
 			}
-			orderState = broker_api.ActiveOrderTracker{Status: broker_api.PartiallyFilled, RemainingQty: remainingQty}
+			orderState = ActiveOrderTracker{Status: PartiallyFilled, RemainingQty: remainingQty}
 		} else {
-			orderState = broker_api.ActiveOrderTracker{Status: orderStatus}
+			orderState = ActiveOrderTracker{Status: orderStatus}
 		}
 		ba.activeOrders[order.OrderID] = orderState
 	}
@@ -787,7 +786,7 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 
 func (ba *Adapter) GetRemainingQtyForPartialOrder(
 	ctx context.Context,
-	params broker_api.OpenOrderRequestParams,
+	params OpenOrderRequestParams,
 ) (float64, error) {
 	if order, exists := ba.activeOrders[params.OrderId]; exists {
 		return order.RemainingQty, nil // If it exists locally, return it directly.
@@ -808,8 +807,8 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 	}
 
 	//add to existing local map before return
-	ba.activeOrders[params.OrderId] = broker_api.ActiveOrderTracker{
-		Status:       broker_api.PartiallyFilled,
+	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+		Status:       PartiallyFilled,
 		RemainingQty: remainingQty,
 	}
 	return remainingQty, nil
@@ -817,7 +816,7 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 
 func (ba *Adapter) GetOpenOrder(
 	ctx context.Context,
-	params broker_api.OpenOrderRequestParams,
+	params OpenOrderRequestParams,
 ) (OrderInfo, error) {
 	return ba.getOpenOrder(ctx, params)
 }
@@ -825,7 +824,7 @@ func (ba *Adapter) GetOpenOrder(
 // getOpenOrder fetches open order details from /v5/order/realtime endpoint of Bybit
 func (ba *Adapter) getOpenOrder(
 	ctx context.Context,
-	params broker_api.OpenOrderRequestParams,
+	params OpenOrderRequestParams,
 ) (OrderInfo, error) {
 	queryParams := map[string]interface{}{"category": "spot"}
 
@@ -956,7 +955,7 @@ func removeUSDTSuffix(symbol string) string {
 }
 
 // parseOrderStatus converts api response to OrderStatus map
-func parseOrderStatus(status string) (broker_api.OrderStatus, bool) {
+func parseOrderStatus(status string) (OrderStatus, bool) {
 	enumStatus, ok := orderStatusMap[status]
 	return enumStatus, ok
 }

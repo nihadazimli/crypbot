@@ -8,8 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nihadazimli/crypbot/internal/exchange"
+
 	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/broker_api/bybit"
 	"github.com/nihadazimli/crypbot/internal/financial"
 	"github.com/nihadazimli/crypbot/internal/trader"
 )
@@ -31,7 +32,7 @@ func main() {
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
-	bybitAdapter := bybit.NewBybitAdapter(ctx)
+	bybitAdapter := exchange.NewBybitAdapter(ctx)
 
 	fe := financial.Start(ctx, bybitAdapter, buyReady)
 

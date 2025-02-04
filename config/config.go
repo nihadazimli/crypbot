@@ -11,7 +11,7 @@ import (
 )
 
 type Config struct {
-	Broker          BrokerConfig          `yaml:"bybit"`
+	Exchange        ExchangeConfig        `yaml:"bybit"`
 	Symbols         []string              `yaml:"symbols"`
 	MarketConstants MarketConstantsConfig `yaml:"market_constants"`
 	Trader          TraderConfig          `yaml:"trader"`
@@ -19,7 +19,7 @@ type Config struct {
 	KlineTopics     []string              `yaml:"-"`
 }
 
-type BrokerConfig struct {
+type ExchangeConfig struct {
 	API       APIConfig       `yaml:"api"`
 	WebSocket WebSocketConfig `yaml:"web_socket"`
 }

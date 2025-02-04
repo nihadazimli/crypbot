@@ -14,7 +14,7 @@ import (
 	"github.com/nihadazimli/crypbot/pkg/numutils"
 
 	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/broker_api"
+	"github.com/nihadazimli/crypbot/internal/exchange"
 	"github.com/nihadazimli/crypbot/internal/model"
 )
 
@@ -40,7 +40,7 @@ type EngineInterface interface {
 type Engine struct {
 	httpClient             *http.Client
 	cfg                    *config.Config
-	broker                 broker_api.BrokerAPI
+	exchange               exchange.Exchange
 	buyReady               chan string
 	klineReceived          chan model.WSInternalKline
 	Coins                  map[string]*model.CoinMetrics
@@ -72,7 +72,7 @@ func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
 func NewFinancialEngine(
 	cfg *config.Config,
-	broker broker_api.BrokerAPI,
+	exchange exchange.Exchange,
 	klineReceived chan model.WSInternalKline,
 	buyReady chan string,
 	httpTimeoutSec int,
@@ -87,7 +87,7 @@ func NewFinancialEngine(
 		maCacheTTL:             maCacheTTL,
 		klineReceived:          klineReceived,
 		buyReady:               buyReady,
-		broker:                 broker,
+		exchange:               exchange,
 		expectedCoinCount:      expectedCoinCount,
 		buyTradeCandidateCoins: make(map[string]float64),
 		processedCoinsInCycle:  make(map[string]bool),
@@ -97,14 +97,14 @@ func NewFinancialEngine(
 
 func Start(
 	ctx context.Context,
-	broker broker_api.BrokerAPI,
+	exchangeInstance exchange.Exchange,
 	buyReady chan string,
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
 	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
-	fe := NewFinancialEngine(cfg, broker, klineReceived, buyReady, cfg.Broker.API.Timeout, maCacheTimeout, len(cfg.Symbols))
+	fe := NewFinancialEngine(cfg, exchangeInstance, klineReceived, buyReady, cfg.Exchange.API.Timeout, maCacheTimeout, len(cfg.Symbols))
 
 	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
 	if err != nil {
@@ -112,7 +112,7 @@ func Start(
 	}
 	fe.startCacheCleanup(ctx)
 
-	err = fe.broker.StartKlineStream(ctx, broker_api.KlineStreamRequestParams{
+	err = fe.exchange.StartKlineStream(ctx, exchange.KlineStreamRequestParams{
 		Symbols: fe.cfg.Symbols, KlineWriteChan: fe.klineReceived, Interval: fe.cfg.MarketConstants.KlineInterval,
 	})
 	if err != nil {
@@ -241,13 +241,13 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 // getRawCoinMetricsData retrieves most recent n closed klines for a given trading symbol and initializes CoinMetrics.
 func (fe *Engine) getRawCoinMetricsData(ctx context.Context, symbol string) (*model.CoinMetrics, error) {
 
-	params := broker_api.KlineHistoryParams{
+	params := exchange.KlineHistoryParams{
 		Symbol:   symbol,
 		Interval: fe.cfg.MarketConstants.KlineInterval,
 		Limit:    fe.cfg.MarketConstants.MetricsWindowSize,
 	}
 
-	klineHistoryMarket, err := fe.broker.GetKlineHistory(ctx, params)
+	klineHistoryMarket, err := fe.exchange.GetKlineHistory(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("GetKlineHistory - symbol %s err: %v", symbol, err)
 	}
@@ -313,12 +313,12 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 		return cache, nil
 	}
 
-	params := broker_api.KlineHistoryParams{
+	params := exchange.KlineHistoryParams{
 		Symbol:   symbol,
 		Interval: fe.cfg.MarketConstants.ClosePriceMAInterval,
 		Limit:    fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
 	}
-	klineHistory, err := fe.broker.GetKlineHistory(context.Background(), params)
+	klineHistory, err := fe.exchange.GetKlineHistory(context.Background(), params)
 	if err != nil {
 		return nil, err
 	}
