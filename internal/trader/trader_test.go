@@ -8,7 +8,7 @@ import (
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/financial"
 
-	"github.com/nihadazimli/crypbot/internal/broker_api"
+	"github.com/nihadazimli/crypbot/internal/exchange"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -38,38 +38,38 @@ func (fe *MockFinancialEngine) GetRSILive(symbol string) (float64, bool) {
 	return args.Get(0).(float64), args.Bool(1)
 }
 
-type MockBroker struct {
+type MockExchange struct {
 	mock.Mock
-	broker_api.BrokerAPI
+	exchange.Exchange
 }
 
-func (b *MockBroker) GetAccountBalance(ctx context.Context) (float64, error) {
+func (b *MockExchange) GetAccountBalance(ctx context.Context) (float64, error) {
 	args := b.Called(ctx)
 	return args.Get(0).(float64), args.Error(1)
 }
 
-func (b *MockBroker) GetOrderBook(
+func (b *MockExchange) GetOrderBook(
 	ctx context.Context,
-	params broker_api.OrderBookRequestParams,
-) (broker_api.OrderBookResult, error) {
+	params exchange.OrderBookRequestParams,
+) (exchange.OrderBookResult, error) {
 	args := b.Called(ctx, params)
-	return args.Get(0).(broker_api.OrderBookResult), args.Error(1)
+	return args.Get(0).(exchange.OrderBookResult), args.Error(1)
 }
 
-func (b *MockBroker) PlaceBuyOrder(
+func (b *MockExchange) PlaceBuyOrder(
 	ctx context.Context,
-	params broker_api.BuyOrderRequestParams,
-) (broker_api.BuyOrderResult, error) {
+	params exchange.BuyOrderRequestParams,
+) (exchange.BuyOrderResult, error) {
 	args := b.Called(ctx, params)
-	return args.Get(0).(broker_api.BuyOrderResult), args.Error(1)
+	return args.Get(0).(exchange.BuyOrderResult), args.Error(1)
 }
 
-func (b *MockBroker) PlaceSellOrder(
+func (b *MockExchange) PlaceSellOrder(
 	ctx context.Context,
-	params broker_api.SellOrderRequestParams,
-) (broker_api.SellOrderResult, error) {
+	params exchange.SellOrderRequestParams,
+) (exchange.SellOrderResult, error) {
 	args := b.Called(ctx, params)
-	return args.Get(0).(broker_api.SellOrderResult), args.Error(1)
+	return args.Get(0).(exchange.SellOrderResult), args.Error(1)
 }
 
 func TestTrader_BuyConditionsMet(t *testing.T) {
@@ -123,14 +123,14 @@ func TestTrader_BuyConditionsMet(t *testing.T) {
 
 	// Set up the mock and configuration
 	mockFE := &MockFinancialEngine{}
-	mockBroker := &MockBroker{}
+	mockExchange := &MockExchange{}
 	cfg := &config.Config{
 		Trader: config.TraderConfig{
 			RSIBuyValue:           20,
 			MedianVolumeThreshold: 40000,
 		},
 	}
-	trader := NewTrader(make(chan string, 1), make(chan string, 1), cfg, mockBroker, mockFE)
+	trader := NewTrader(make(chan string, 1), make(chan string, 1), cfg, mockExchange, mockFE)
 
 	// Configure the mock based on test cases
 	for _, tc := range testCases {
@@ -185,7 +185,7 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 	}
 
 	mockFE := &MockFinancialEngine{}
-	mockBroker := &MockBroker{}
+	mockExchange := &MockExchange{}
 
 	ctx := context.Background()
 	cfg := &config.Config{
@@ -197,29 +197,29 @@ func TestTrader_ProcessBuySignal(t *testing.T) {
 	buyReady := make(chan string, 1)
 	sellReady := make(chan string, 1)
 
-	trader := NewTrader(buyReady, sellReady, cfg, mockBroker, mockFE)
+	trader := NewTrader(buyReady, sellReady, cfg, mockExchange, mockFE)
 
 	// Configure mocks for internal trader functions
 	for _, tc := range testCases {
 		mockFE.On("GetRSIClosed", tc.symbol).Return(tc.rsi, tc.rsiExists).Once()
 		mockFE.On("GetVolumeValueMedian", tc.symbol).Return(tc.volume, tc.volumeExists).Once()
 		mockFE.On("GetCurrentPrice", tc.symbol).Return(tc.currPrice, tc.currPriceExists).Once()
-		mockBroker.On("GetAccountBalance", mock.Anything).
+		mockExchange.On("GetAccountBalance", mock.Anything).
 			Return(tc.accountBalance, tc.accountBalanceErr).
 			Once()
-		mockBroker.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params broker_api.OrderBookRequestParams) bool {
+		mockExchange.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params exchange.OrderBookRequestParams) bool {
 			return params.Symbol == tc.symbol && params.Limit == 1
 		})).
-			Return(broker_api.OrderBookResult{
-				Ask: []broker_api.OrderBookDetail{{Price: tc.orderBookAskPrice, Quantity: 1}},
-				Bid: []broker_api.OrderBookDetail{{Price: tc.orderBookBidPrice, Quantity: 1}},
+			Return(exchange.OrderBookResult{
+				Ask: []exchange.OrderBookDetail{{Price: tc.orderBookAskPrice, Quantity: 1}},
+				Bid: []exchange.OrderBookDetail{{Price: tc.orderBookBidPrice, Quantity: 1}},
 			}, nil).
 			Once()
-		mockBroker.On("PlaceBuyOrder", mock.Anything, mock.MatchedBy(func(params broker_api.BuyOrderRequestParams) bool {
+		mockExchange.On("PlaceBuyOrder", mock.Anything, mock.MatchedBy(func(params exchange.BuyOrderRequestParams) bool {
 			return params.Symbol == tc.symbol && params.OrderAmount == tc.accountBalance &&
 				params.LimitPrice == tc.orderBookBidPrice
 		})).
-			Return(broker_api.BuyOrderResult{Success: true, Details: broker_api.BuyOrderResultDetails{OrderId: "1223", OrderLinkId: "23323", OrderAmount: tc.orderAmount}}, nil)
+			Return(exchange.BuyOrderResult{Success: true, Details: exchange.BuyOrderResultDetails{OrderId: "1223", OrderLinkId: "23323", OrderAmount: tc.orderAmount}}, nil)
 	}
 
 	// Execute tests
@@ -262,7 +262,7 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 		},
 	}
 	mockFE := &MockFinancialEngine{}
-	mockBroker := &MockBroker{}
+	mockExchange := &MockExchange{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -276,29 +276,29 @@ func TestTrader_ProcessSellSignal(t *testing.T) {
 
 	sellReady := make(chan string, 1)
 
-	trader := NewTrader(make(chan string, 1), sellReady, cfg, mockBroker, mockFE)
+	trader := NewTrader(make(chan string, 1), sellReady, cfg, mockExchange, mockFE)
 
 	//Configure the mocks
 	for _, tc := range testCases {
 		mockFE.On("GetRSILive", tc.symbol).Return(tc.rsiLive, tc.rsiLiveStatus)
-		mockBroker.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params broker_api.OrderBookRequestParams) bool {
+		mockExchange.On("GetOrderBook", mock.Anything, mock.MatchedBy(func(params exchange.OrderBookRequestParams) bool {
 			return params.Symbol == tc.symbol && params.Limit == 1
 		})).
-			Return(broker_api.OrderBookResult{
-				Ask: []broker_api.OrderBookDetail{{Price: tc.bestAskPrice, Quantity: 1}},
-				Bid: []broker_api.OrderBookDetail{{Price: 0, Quantity: 1}},
+			Return(exchange.OrderBookResult{
+				Ask: []exchange.OrderBookDetail{{Price: tc.bestAskPrice, Quantity: 1}},
+				Bid: []exchange.OrderBookDetail{{Price: 0, Quantity: 1}},
 			}, nil).
 			Once()
 		mockFE.On("GetCurrentPrice", tc.symbol).
 			Return(tc.currentPrice, tc.currentPriceExists).
 			Once()
-		mockBroker.On("PlaceSellOrder", mock.Anything, mock.MatchedBy(func(params broker_api.SellOrderRequestParams) bool {
+		mockExchange.On("PlaceSellOrder", mock.Anything, mock.MatchedBy(func(params exchange.SellOrderRequestParams) bool {
 			return params.Symbol == tc.symbol && params.OrderAmount == tc.currentPosition &&
 				params.LimitPrice == tc.limitPrice
 		})).
-			Return(broker_api.SellOrderResult{
+			Return(exchange.SellOrderResult{
 				Success: true,
-				Details: broker_api.SellOrderResultDetails{
+				Details: exchange.SellOrderResultDetails{
 					OrderId:     "123",
 					OrderLinkId: "123",
 					OrderAmount: tc.currentPosition}}, nil).
