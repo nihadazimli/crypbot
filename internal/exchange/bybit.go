@@ -570,7 +570,10 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 	reverse(volumeValues)
 
 	// Eliminate live value, just return most recent closed values
-	return KlineHistoryResult{ClosePrices: closePrices[:len(closePrices)-1], Volumes: volumeValues[:len(volumeValues)-1]}, nil
+	return KlineHistoryResult{
+		ClosePrices: closePrices[:len(closePrices)-1],
+		Volumes:     volumeValues[:len(volumeValues)-1],
+	}, nil
 }
 
 func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error) {

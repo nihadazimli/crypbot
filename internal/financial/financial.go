@@ -104,7 +104,15 @@ func Start(
 	klineReceived := make(chan model.WSInternalKline)
 	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
-	fe := NewFinancialEngine(cfg, exchangeInstance, klineReceived, buyReady, cfg.Exchange.API.Timeout, maCacheTimeout, len(cfg.Symbols))
+	fe := NewFinancialEngine(
+		cfg,
+		exchangeInstance,
+		klineReceived,
+		buyReady,
+		cfg.Exchange.API.Timeout,
+		maCacheTimeout,
+		len(cfg.Symbols),
+	)
 
 	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
 	if err != nil {

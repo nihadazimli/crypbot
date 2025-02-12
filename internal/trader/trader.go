@@ -112,7 +112,7 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string) error {
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
 	err := tc.exchange.StartOrderStream()
 	if err != nil {
-		return fmt.Errorf("cannot start listenting to order stream. Err: %v", err)
+		return fmt.Errorf("cannot start listening to order stream. Err: %v", err)
 	}
 	defer tc.exchange.StopOrderStream()
 
@@ -136,7 +136,11 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 		case <-ticker.C:
 			orderStatus, err := tc.exchange.GetOrderStatus(ctx, initialOrder.Details.OrderId)
 			if err != nil {
-				return fmt.Errorf("monitorBuyOrder - not found initialOrder id %s. Err: %v", initialOrder.Details.OrderId, err)
+				return fmt.Errorf(
+					"monitorBuyOrder - not found initialOrder id %s. Err: %v",
+					initialOrder.Details.OrderId,
+					err,
+				)
 			}
 
 			switch orderStatus {
@@ -164,7 +168,10 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					amendedOrder, err := tc.exchange.AmendOrder(ctx, params)
 					if err != nil {
 						if errors.Is(err, exchange.AmendErrQuantityTooLow) {
-							cancelParams := exchange.CancelOrderRequestParams{OrderId: amendedOrder.OrderId, Symbol: symbol}
+							cancelParams := exchange.CancelOrderRequestParams{
+								OrderId: amendedOrder.OrderId,
+								Symbol:  symbol,
+							}
 							_, err = tc.exchange.CancelOrder(ctx, cancelParams)
 							if err != nil {
 								return fmt.Errorf("monitor buy order - cannot cancel low qty order. Err:%v", err)
@@ -175,20 +182,28 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 							)
 						} else if errors.Is(err, exchange.AmendErrUnchangedParams) {
 							continue
+						} else if errors.Is(err, exchange.AmendErrOrderDoesNotExist) {
+							log.Printf(
+								"Monitor buy order - Probably Filled order %s does not exist anymore\n",
+								amendedOrder.OrderId,
+							)
 						} else {
-							return fmt.Errorf("monitor buy order - Cannot Amend Order. Unhandled err: %v", err)
+							return fmt.Errorf("monitor buy order - Cannot Amend Order id %v. Unhandled err: %v", amendedOrder.OrderId, err)
+						}
 
-						}
-						err = tc.gracefullyFinishOrder(ctx, symbol)
-						if err != nil {
-							return fmt.Errorf("monitor buy order - %v", err)
-						}
+						log.Printf("Monitor buy order - Triggering sell. Last known buy params: %v", params)
+						tc.triggerSell(symbol)
 						return nil
 					}
+					log.Printf("Order %s is amended. Params: %v\n", amendedOrder.OrderId, params)
+
 				case BuyConditionWait:
 					continue
 				case BuyConditionCancel:
-					cancelParams := exchange.CancelOrderRequestParams{OrderId: initialOrder.Details.OrderId, Symbol: symbol}
+					cancelParams := exchange.CancelOrderRequestParams{
+						OrderId: initialOrder.Details.OrderId,
+						Symbol:  symbol,
+					}
 					_, err = tc.exchange.CancelOrder(ctx, cancelParams)
 					if err != nil {
 						return fmt.Errorf("monitor buy order - cannot cancel conditions failed order. Err:%v", err)
@@ -254,7 +269,7 @@ func (tc *Trader) placeFastBuyOrder(
 	if err != nil {
 		return orderResult, err
 	}
-	log.Println("Buy order placed successfully:", orderResult.Details.OrderId)
+	log.Printf("Buy order placed successfully %v. Order Params: %v\n", orderResult.Details.OrderId, orderParams)
 	return orderResult, nil
 }
 
@@ -389,7 +404,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					log.Printf("Execute sell order - Cannot Amend Order. Unhandled err: %v", err)
 				}
 			}
-			log.Printf("Order Id %s is amended successfully\n", order.OrderId)
+			log.Printf("Order %s is amended. Params: %v\n", order.OrderId, params)
 
 		}
 	}
@@ -433,7 +448,11 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f)\n", movingAverages.MA50, movingAverages.MA100)
+		log.Printf(
+			"Moving average short (%.2f) is smaller than moving average long (%.2f)\n",
+			movingAverages.MA50,
+			movingAverages.MA100,
+		)
 		return BuyConditionCancel
 	}
 
