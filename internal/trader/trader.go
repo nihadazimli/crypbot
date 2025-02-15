@@ -195,7 +195,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 						tc.triggerSell(symbol)
 						return nil
 					}
-					log.Printf("Order %s is amended. Params: %v\n", amendedOrder.OrderId, params)
+					log.Printf("Order %s is amended. Price: %v\n", amendedOrder.OrderId, &params.Price)
 
 				case BuyConditionWait:
 					continue
@@ -404,7 +404,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					log.Printf("Execute sell order - Cannot Amend Order. Unhandled err: %v", err)
 				}
 			}
-			log.Printf("Order %s is amended. Params: %v\n", order.OrderId, params)
+			log.Printf("Order %s is amended. Price: %v\n", order.OrderId, &params.Price)
 
 		}
 	}
