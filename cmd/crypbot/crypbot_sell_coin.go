@@ -1,0 +1,51 @@
+// Package main is where application starts
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/nihadazimli/crypbot/internal/exchange"
+
+	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/financial"
+	"github.com/nihadazimli/crypbot/internal/trader"
+)
+
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		log.Println("Shutting down with full of grace...")
+		cancel()
+	}()
+
+	cfg := config.GetConfig()
+
+	buyReady := make(chan string, len(cfg.Symbols)+1)
+	sellReady := make(chan string, len(cfg.Symbols)+1)
+
+	bybitAdapter := exchange.NewBybitAdapter(ctx)
+
+	fe := financial.Start(ctx, bybitAdapter, buyReady)
+
+	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
+
+	symbol := "BTCUSDT"
+	sellWithCheck := true
+
+	err := tc.SellCoin(ctx, symbol, sellWithCheck)
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	<-ctx.Done() // Block until context is cancelled
+}
