@@ -89,6 +89,7 @@ const (
 	AmendOrderErrCodeQuantityTooLow      = 170136
 	AmendOrderErrCodeUnchangedParameters = 10001
 	AmendOrderErrOrderDoesNotExist       = 170213
+	AmendOrderSuccess                    = 0
 )
 
 type Adapter struct {
@@ -487,7 +488,7 @@ func (ba *Adapter) AmendOrder(
 		return AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", AmendErrUnchangedParams, params)
 	} else if response.RetCode == AmendOrderErrOrderDoesNotExist {
 		return AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", AmendErrOrderDoesNotExist, params)
-	} else if response.RetCode != 0 {
+	} else if response.RetCode != AmendOrderSuccess {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
 			log.Printf("error marshalling full response: %s\n", jsonErr)
@@ -500,6 +501,7 @@ func (ba *Adapter) AmendOrder(
 			response.RetMsg,
 		)
 	}
+	log.Printf("Order amended successfully. Params: %v", params)
 
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {

@@ -162,7 +162,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 						Symbol:   symbol,
 						OrderId:  initialOrder.Details.OrderId,
 						Price:    &orderParams.LimitPrice,
-						Quantity: &orderParams.OrderAmount,
+						Quantity: nil, //TODO: Check if any drawbacks
 						StopLoss: &orderParams.StopLimit,
 					}
 					amendedOrder, err := tc.exchange.AmendOrder(ctx, params)
@@ -195,7 +195,6 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 						tc.triggerSell(symbol)
 						return nil
 					}
-					log.Printf("Order %s is amended. Price: %v\n", amendedOrder.OrderId, &params.Price)
 
 				case BuyConditionWait:
 					continue
@@ -380,15 +379,15 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					continue
 				}
 				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
-				//orderParams.OrderAmount = remainingQty
 			}
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,
 				Price:    &orderParams.LimitPrice,
-				Quantity: &orderParams.OrderAmount,
+				Quantity: nil, // TODO: Check if any drawbacks
+				StopLoss: nil,
 			}
-			order, err := tc.exchange.AmendOrder(ctx, params)
+			_, err = tc.exchange.AmendOrder(ctx, params)
 			if err != nil {
 				if errors.Is(err, exchange.AmendErrUnchangedParams) {
 					continue
@@ -401,10 +400,9 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					}
 					return true
 				} else {
-					log.Printf("Execute sell order - Cannot Amend Order. Unhandled err: %v", err)
+					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", order.Details.OrderId, err)
 				}
 			}
-			log.Printf("Order %s is amended. Price: %v\n", order.OrderId, &params.Price)
 
 		}
 	}
