@@ -84,6 +84,10 @@ func GetConfig() *Config {
 	return cfg
 }
 
+func (c *Config) SetSymbols(symbols []string) {
+	c.Symbols = symbols
+}
+
 func loadFromYaml() (*Config, error) {
 	configPath := filepath.Join("config", "config.yaml")
 

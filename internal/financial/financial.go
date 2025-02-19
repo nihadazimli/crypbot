@@ -127,7 +127,7 @@ func Start(
 		log.Printf("Cannot start KlineStream. Err: %v\n", err)
 	}
 	go fe.processKline()
-	log.Printf("Financial Engine initialized successfully!\n")
+	log.Printf("Financial Engine initialized successfully for all %v symbols!\n", len(fe.cfg.Symbols))
 	return fe
 }
 

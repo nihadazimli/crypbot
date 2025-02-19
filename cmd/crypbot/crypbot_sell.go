@@ -34,6 +34,7 @@ func main() {
 	}()
 
 	cfg := config.GetConfig()
+	cfg.SetSymbols([]string{*symbolFlag})
 
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
@@ -44,12 +45,11 @@ func main() {
 
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 
-	// Use the flag values
 	err := tc.SellCoin(ctx, *symbolFlag, *sellCheckFlag)
 
 	if err != nil {
 		log.Println(err)
 	}
 
-	<-ctx.Done() // Block until context is cancelled
+	<-ctx.Done()
 }
