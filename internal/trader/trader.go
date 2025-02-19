@@ -109,6 +109,10 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck boo
 		go tc.ProcessSellSignal(ctx)
 		tc.triggerSell(symbol)
 	} else {
+		err := tc.exchange.CancelAllTPSLOrders(ctx, symbol)
+		if err != nil {
+			log.Printf("Error cancelling tpsl orders. Err: %v\n", err)
+		}
 		result := tc.executeSellOrder(ctx, symbol)
 		if result != true {
 			return fmt.Errorf("cant sell coin")
