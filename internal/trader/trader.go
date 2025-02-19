@@ -214,7 +214,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					if err != nil {
 						return fmt.Errorf("monitor buy order - cannot cancel conditions failed order. Err:%v", err)
 					}
-					err = tc.gracefullyFinishOrder(ctx, symbol)
+					err = tc.gracefullyFinishOrder(ctx, symbol, false)
 					if err != nil {
 						return fmt.Errorf("monitor buy order - %v", err)
 					}
@@ -222,14 +222,14 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 				}
 
 			case exchange.Invalid, exchange.Canceled:
-				err = tc.gracefullyFinishOrder(ctx, symbol)
+				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
 				}
 				return nil
 			default:
 				log.Printf("Order Status: %v This status is not handled\n", orderStatus)
-				err = tc.gracefullyFinishOrder(ctx, symbol)
+				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
 				}
@@ -400,7 +400,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					continue
 				} else if errors.Is(err, exchange.AmendErrOrderDoesNotExist) {
 					log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
-					err := tc.gracefullyFinishOrder(ctx, symbol)
+					err = tc.gracefullyFinishOrder(ctx, symbol, true)
 					if err != nil {
 						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
 						return false
@@ -408,6 +408,11 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					return true
 				} else {
 					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", order.Details.OrderId, err)
+					err = tc.gracefullyFinishOrder(ctx, symbol, true)
+					if err != nil {
+						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+						return false
+					}
 				}
 			}
 
@@ -636,7 +641,9 @@ func (tc *Trader) getBestAskPrice(ctx context.Context, symbol string) (float64, 
 	return bestAskPrice, nil
 }
 
-func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) error {
+func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string, sellWithCheck bool) error {
+	log.Printf("Gracefully Finish for %s called. Checking RSI set to %v\n", symbol, sellWithCheck)
+
 	coinBalance, err := tc.exchange.GetSymbolBalance(ctx, symbol)
 	if err != nil {
 		return err
@@ -644,7 +651,13 @@ func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) erro
 
 	if coinBalance.UsdValue > 1 {
 		tc.activeOrders[symbol] = 1
-		tc.executeSellOrder(ctx, symbol)
+		if sellWithCheck {
+			tc.sellReady <- symbol
+		} else {
+			tc.executeSellOrder(ctx, symbol)
+		}
+	} else {
+		log.Printf("Balance for %s is less than 1 dollar\n", symbol)
 	}
 	return nil
 }

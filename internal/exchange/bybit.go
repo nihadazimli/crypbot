@@ -501,7 +501,7 @@ func (ba *Adapter) AmendOrder(
 			response.RetMsg,
 		)
 	}
-	log.Printf("Order amended successfully. Params: %v", params)
+	log.Printf("Order amended successfully. Params: %v", requestParams)
 
 	resultData, err := json.Marshal(response.Result)
 	if err != nil {
