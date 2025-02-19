@@ -1,21 +1,27 @@
-// Package main is where application starts
 package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/nihadazimli/crypbot/internal/exchange"
-
 	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/exchange"
 	"github.com/nihadazimli/crypbot/internal/financial"
 	"github.com/nihadazimli/crypbot/internal/trader"
 )
 
 func main() {
+	// Define command-line flags
+	symbolFlag := flag.String("symbol", "BTCUSDT", "Trading symbol (e.g., BTCUSDT)")
+	sellCheckFlag := flag.Bool("check", true, "Enable sell with check")
+
+	// Parse command-line flags
+	flag.Parse()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -38,10 +44,8 @@ func main() {
 
 	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
 
-	symbol := "BTCUSDT"
-	sellWithCheck := true
-
-	err := tc.SellCoin(ctx, symbol, sellWithCheck)
+	// Use the flag values
+	err := tc.SellCoin(ctx, *symbolFlag, *sellCheckFlag)
 
 	if err != nil {
 		log.Println(err)

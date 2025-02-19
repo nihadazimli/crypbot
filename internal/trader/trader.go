@@ -102,10 +102,17 @@ func (tc *Trader) BuyCoin(ctx context.Context, symbol string) error {
 	return nil
 }
 
-func (tc *Trader) SellCoin(ctx context.Context, symbol string) error {
-	result := tc.executeSellOrder(ctx, symbol)
-	if result != true {
-		return fmt.Errorf("cant sell coin")
+func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck bool) error {
+
+	log.Printf("Starting selling manually %s. Checks conditions set to %v", symbol, sellWithCheck)
+	if sellWithCheck {
+		go tc.ProcessSellSignal(ctx)
+		tc.triggerSell(symbol)
+	} else {
+		result := tc.executeSellOrder(ctx, symbol)
+		if result != true {
+			return fmt.Errorf("cant sell coin")
+		}
 	}
 	return nil
 }
