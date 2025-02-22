@@ -145,7 +145,11 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 		case <-ctx.Done():
 			return fmt.Errorf("monitorBuyOrder - context cancelled while monitoring buy for %s", symbol)
 		case <-ticker.C:
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, initialOrder.Details.OrderId)
+			orderStatusParams := exchange.OrderRequestParams{
+				OrderId: initialOrder.Details.OrderId,
+				Symbol:  symbol,
+			}
+			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 			if err != nil {
 				return fmt.Errorf(
 					"monitorBuyOrder - not found initialOrder id %s. Err: %v",
@@ -356,7 +360,11 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			log.Println("Stopping executing sell order")
 			return false
 		case <-sellTicker.C:
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, order.Details.OrderId)
+			orderStatusParams := exchange.OrderRequestParams{
+				OrderId: order.Details.OrderId,
+				Symbol:  symbol,
+			}
+			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 
 			if err != nil {
 				log.Printf(
@@ -378,19 +386,19 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if orderStatus == exchange.PartiallyFilled {
-				params := exchange.OpenOrderRequestParams{OrderId: order.Details.OrderId}
-				remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
-				if err != nil {
-					log.Printf(
-						"Can't get Remaining qty for sell order %s. Error: %v\n",
-						order.Details.OrderId,
-						err,
-					)
-					continue
-				}
-				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
-			}
+			//if orderStatus == exchange.PartiallyFilled {
+			//	params := exchange.OrderRequestParams{OrderId: order.Details.OrderId}
+			//	remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
+			//	if err != nil {
+			//		log.Printf(
+			//			"Can't get Remaining qty for sell order %s. Error: %v\n",
+			//			order.Details.OrderId,
+			//			err,
+			//		)
+			//		continue
+			//	}
+			//	log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+			//}
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,
