@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-type Manager interface {
+type OrderManager interface {
 	Create(ctx context.Context, params CreateParams) (*Order, error)
 	Update(ctx context.Context, params UpdateParams) (*Order, error)
 	Cancel(ctx context.Context, orderID string) error

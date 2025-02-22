@@ -31,6 +31,13 @@ type OrderInfoResult struct {
 		OrderStatus string `json:"orderStatus"`
 	}
 }
+type OrderSource int
+
+const (
+	OrderSourceRealtime OrderSource = iota
+	OrderSourceHistory
+)
+
 type OrderInfo struct {
 	OrderId   string
 	Price     string
@@ -38,6 +45,10 @@ type OrderInfo struct {
 	LeavesQty string
 	Symbol    string
 	Status    OrderStatus
+}
+
+func (oi OrderInfo) isEmpty() bool {
+	return oi.OrderId == "" && oi.Symbol == ""
 }
 
 type InstrumentResult struct {
@@ -578,14 +589,12 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 	}, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, orderId string) (OrderStatus, error) {
-	if order, exists := ba.activeOrders[orderId]; exists {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (OrderStatus, error) {
+	if order, exists := ba.activeOrders[params.OrderId]; exists {
 		return order.Status, nil
 	}
 
-	openOrderParams := OpenOrderRequestParams{OrderId: orderId}
-	order, err := ba.getOpenOrder(ctx, openOrderParams)
-
+	order, err := ba.getOrder(ctx, params)
 	if err != nil {
 		return Invalid, err
 	}
@@ -789,62 +798,98 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	return nil
 }
 
-func (ba *Adapter) GetRemainingQtyForPartialOrder(
+//
+//func (ba *Adapter) GetRemainingQtyForPartialOrder(
+//	ctx context.Context,
+//	params OrderRequestParams,
+//) (float64, error) {
+//	if order, exists := ba.activeOrders[params.OrderId]; exists {
+//		return order.RemainingQty, nil // If it exists locally, return it directly.
+//	}
+//
+//	openOrderInfo, err := ba.getOrder(ctx, params)
+//	if err != nil {
+//		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
+//	}
+//
+//	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
+//	if err != nil {
+//		return 0.0, fmt.Errorf(
+//			"error parsing remaining quantity for order ID %s: %v",
+//			params.OrderId,
+//			err,
+//		)
+//	}
+//
+//	//add to existing local map before return
+//	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+//		Status:       PartiallyFilled,
+//		RemainingQty: remainingQty,
+//	}
+//	return remainingQty, nil
+//}
+
+// getOrder fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
+func (ba *Adapter) getOrder(
 	ctx context.Context,
-	params OpenOrderRequestParams,
-) (float64, error) {
-	if order, exists := ba.activeOrders[params.OrderId]; exists {
-		return order.RemainingQty, nil // If it exists locally, return it directly.
+	params OrderRequestParams,
+) (OrderInfo, error) {
+	queryParams := map[string]interface{}{
+		"category": "spot",
+		"orderId":  params.OrderId,
+		"symbol":   params.Symbol,
 	}
 
-	openOrderInfo, err := ba.getOpenOrder(ctx, params)
+	orderInfo, err := ba.fetchOrderFromSource(ctx, queryParams, params, OrderSourceRealtime)
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
+		return OrderInfo{}, fmt.Errorf("failed to fetch realtime order: %w", err)
+	}
+	if !orderInfo.isEmpty() {
+		return orderInfo, nil
 	}
 
-	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
+	if !orderInfo.isEmpty() {
+		return orderInfo, nil
+	}
+
+	orderInfo, err = ba.fetchOrderFromSource(ctx, queryParams, params, OrderSourceHistory)
 	if err != nil {
-		return 0.0, fmt.Errorf(
-			"error parsing remaining quantity for order ID %s: %v",
-			params.OrderId,
-			err,
-		)
+		return OrderInfo{}, fmt.Errorf("failed to fetch historical order: %w", err)
 	}
 
-	//add to existing local map before return
-	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-		Status:       PartiallyFilled,
-		RemainingQty: remainingQty,
+	if !orderInfo.isEmpty() {
+		return orderInfo, nil
 	}
-	return remainingQty, nil
+
+	return OrderInfo{}, fmt.Errorf("order not found for params: %+v", params)
 }
 
-func (ba *Adapter) GetOpenOrder(
+func (ba *Adapter) fetchOrderFromSource(
 	ctx context.Context,
-	params OpenOrderRequestParams,
+	queryParams map[string]interface{},
+	params OrderRequestParams,
+	source OrderSource,
 ) (OrderInfo, error) {
-	return ba.getOpenOrder(ctx, params)
-}
+	var response *bybit.ServerResponse
+	var err error
 
-// getOpenOrder fetches open order details from /v5/order/realtime endpoint of Bybit
-func (ba *Adapter) getOpenOrder(
-	ctx context.Context,
-	params OpenOrderRequestParams,
-) (OrderInfo, error) {
-	queryParams := map[string]interface{}{"category": "spot"}
-
-	if params.OrderId != "" {
-		queryParams["orderId"] = params.OrderId
-	}
-	if params.Symbol != "" {
-		queryParams["symbol"] = params.Symbol
+	switch source {
+	case OrderSourceRealtime:
+		response, err = ba.BybitClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
+	case OrderSourceHistory:
+		response, err = ba.BybitClient.NewUtaBybitServiceWithParams(queryParams).GetOrderHistory(ctx)
 	}
 
-	openOrdersResponse, err := ba.BybitClient.NewUtaBybitServiceWithParams(queryParams).GetOpenOrders(ctx)
 	if err != nil {
 		return OrderInfo{}, err
 	}
-	resultData, err := json.Marshal(openOrdersResponse.Result)
+
+	return ba.parseOrderResponse(response, params)
+}
+
+func (ba *Adapter) parseOrderResponse(ordersResponse *bybit.ServerResponse, params OrderRequestParams) (OrderInfo, error) {
+
+	resultData, err := json.Marshal(ordersResponse.Result)
 	if err != nil {
 		return OrderInfo{}, err
 	}
@@ -875,10 +920,7 @@ func (ba *Adapter) getOpenOrder(
 			}, nil
 		}
 	}
-	return OrderInfo{}, fmt.Errorf(
-		"order with following params %v not found in response for open orders",
-		params,
-	)
+	return OrderInfo{}, nil
 }
 
 func (ba *Adapter) fetchPrecisionFromAPI(

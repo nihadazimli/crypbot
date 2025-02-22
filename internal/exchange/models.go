@@ -120,7 +120,7 @@ type ActiveOrderTracker struct {
 	RemainingQty float64
 }
 
-type OpenOrderRequestParams struct {
+type OrderRequestParams struct {
 	OrderId string
 	Symbol  string
 }
