@@ -24,8 +24,7 @@ func NewOrderManager(exchange exchange.Exchange) *Manager {
 }
 
 func (m Manager) Create(ctx context.Context, params CreateParams) (*Order, error) {
-	//TODO implement me
-	panic("implement me")
+
 }
 
 func (m Manager) Update(ctx context.Context, params UpdateParams) (*Order, error) {

@@ -1,4 +1,4 @@
-// Package bybit implements exchange interface for specific exchange called Bybit
+// Package exchange implements exchange interface for specific exchange called Bybit
 package exchange
 
 import (
@@ -798,36 +798,35 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	return nil
 }
 
-//
-//func (ba *Adapter) GetRemainingQtyForPartialOrder(
-//	ctx context.Context,
-//	params OrderRequestParams,
-//) (float64, error) {
-//	if order, exists := ba.activeOrders[params.OrderId]; exists {
-//		return order.RemainingQty, nil // If it exists locally, return it directly.
-//	}
-//
-//	openOrderInfo, err := ba.getOrder(ctx, params)
-//	if err != nil {
-//		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
-//	}
-//
-//	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
-//	if err != nil {
-//		return 0.0, fmt.Errorf(
-//			"error parsing remaining quantity for order ID %s: %v",
-//			params.OrderId,
-//			err,
-//		)
-//	}
-//
-//	//add to existing local map before return
-//	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-//		Status:       PartiallyFilled,
-//		RemainingQty: remainingQty,
-//	}
-//	return remainingQty, nil
-//}
+func (ba *Adapter) GetRemainingQtyForPartialOrder(
+	ctx context.Context,
+	params OrderRequestParams,
+) (float64, error) {
+	if order, exists := ba.activeOrders[params.OrderId]; exists {
+		return order.RemainingQty, nil // If it exists locally, return it directly.
+	}
+
+	openOrderInfo, err := ba.getOrder(ctx, params)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
+	}
+
+	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
+	if err != nil {
+		return 0.0, fmt.Errorf(
+			"error parsing remaining quantity for order ID %s: %v",
+			params.OrderId,
+			err,
+		)
+	}
+
+	//add to existing local map before return
+	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+		Status:       PartiallyFilled,
+		RemainingQty: remainingQty,
+	}
+	return remainingQty, nil
+}
 
 // getOrder fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
 func (ba *Adapter) getOrder(

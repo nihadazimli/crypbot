@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/nihadazimli/crypbot/internal/order"
+
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/financial"
 
@@ -29,6 +31,7 @@ type Trader struct {
 	activeOrders map[string]float64
 	cfg          *config.Config
 	exchange     exchange.Exchange
+	order        order.Manager
 	financial    financial.EngineInterface
 }
 
@@ -38,10 +41,11 @@ func Start(
 	sellReady chan string,
 	market exchange.Exchange,
 	financial financial.EngineInterface,
+	order order.Manager,
 ) *Trader {
 	cfg := config.GetConfig()
 
-	return NewTrader(buyReady, sellReady, cfg, market, financial)
+	return NewTrader(buyReady, sellReady, cfg, market, financial, order)
 }
 
 func NewTrader(
@@ -50,6 +54,7 @@ func NewTrader(
 	cfg *config.Config,
 	market exchange.Exchange,
 	financial financial.EngineInterface,
+	order order.Manager,
 ) *Trader {
 	return &Trader{
 		buyReady:     buyReady,
@@ -57,6 +62,7 @@ func NewTrader(
 		cfg:          cfg,
 		exchange:     market,
 		financial:    financial,
+		order:        order,
 		activeOrders: make(map[string]float64),
 	}
 }
@@ -386,19 +392,19 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			//if orderStatus == exchange.PartiallyFilled {
-			//	params := exchange.OrderRequestParams{OrderId: order.Details.OrderId}
-			//	remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
-			//	if err != nil {
-			//		log.Printf(
-			//			"Can't get Remaining qty for sell order %s. Error: %v\n",
-			//			order.Details.OrderId,
-			//			err,
-			//		)
-			//		continue
-			//	}
-			//	log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
-			//}
+			if orderStatus == exchange.PartiallyFilled {
+				params := exchange.OrderRequestParams{OrderId: order.Details.OrderId, Symbol: symbol}
+				remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
+				if err != nil {
+					log.Printf(
+						"Can't get Remaining qty for sell order %s. Error: %v\n",
+						order.Details.OrderId,
+						err,
+					)
+					continue
+				}
+				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+			}
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,

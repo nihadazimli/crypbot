@@ -17,10 +17,10 @@ type Exchange interface {
 	GetSymbolBalance(ctx context.Context, symbol string) (SymbolBalanceResult, error)
 
 	GetOrderStatus(ctx context.Context, params OrderRequestParams) (OrderStatus, error)
-	//GetRemainingQtyForPartialOrder(
-	//	ctx context.Context,
-	//	params OrderRequestParams,
-	//) (float64, error)
+	GetRemainingQtyForPartialOrder(
+		ctx context.Context,
+		params OrderRequestParams,
+	) (float64, error)
 	GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error)
 	StartOrderStream() error
 	StopOrderStream() error
