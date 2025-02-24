@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/nihadazimli/crypbot/internal/model"
+
 	"github.com/nihadazimli/crypbot/internal/order"
 
 	"github.com/nihadazimli/crypbot/config"
@@ -165,16 +167,16 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 			}
 
 			switch orderStatus {
-			case exchange.Filled, exchange.PartiallyFilledCancelled:
+			case model.OrderFilled, model.OrderPartiallyFilledCancelled:
 				log.Printf("Order filled for %s\n", symbol)
 				tc.triggerSell(symbol)
 				return nil
-			case exchange.Open, exchange.PartiallyFilled:
+			case model.OrderOpen, model.OrderPartiallyFilled:
 				condition := tc.checkBuyConditions(symbol)
 
 				switch condition {
 				case BuyConditionMet:
-					orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+					orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
 					if err != nil {
 						log.Printf("Buy details can't be calculated. Err: %s\n", err)
 						continue
@@ -182,7 +184,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					params := exchange.AmendOrderRequestParams{
 						Symbol:   symbol,
 						OrderId:  initialOrder.Details.OrderId,
-						Price:    &orderParams.LimitPrice,
+						Price:    orderParams.LimitPrice,
 						Quantity: nil, //TODO: Check if any drawbacks
 						StopLoss: &orderParams.StopLimit,
 					}
@@ -235,7 +237,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					return nil
 				}
 
-			case exchange.Invalid, exchange.Canceled:
+			case model.OrderInvalid, model.OrderCanceled:
 				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
@@ -280,7 +282,7 @@ func (tc *Trader) placeFastBuyOrder(
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
 	if err != nil {
 		return exchange.BuyOrderResult{}, fmt.Errorf("Error calculating buy order details: %v\n", err)
 	}
@@ -381,7 +383,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if orderStatus == exchange.Filled {
+			if orderStatus == model.OrderFilled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				return true
 			}
@@ -392,7 +394,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if orderStatus == exchange.PartiallyFilled {
+			if orderStatus == model.OrderPartiallyFilled {
 				params := exchange.OrderRequestParams{OrderId: order.Details.OrderId, Symbol: symbol}
 				remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
 				if err != nil {
@@ -408,7 +410,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
 				OrderId:  order.Details.OrderId,
-				Price:    &orderParams.LimitPrice,
+				Price:    orderParams.LimitPrice,
 				Quantity: nil, // TODO: Check if any drawbacks
 				StopLoss: nil,
 			}
@@ -538,11 +540,11 @@ func (tc *Trader) CalculateSellOrderDetails(
 			symbol,
 		)
 	}
-	//TODO: When orderAmount is zero check through Exchange as well. Or generate a logic to construct it.
 	return exchange.SellOrderRequestParams{
 		Symbol:      symbol,
 		OrderAmount: coinBalance.WalletBalance,
-		LimitPrice:  limitPrice,
+		LimitPrice:  &limitPrice,
+		OrderType:   model.OrderTypeLimit,
 	}, err
 
 }
@@ -550,11 +552,9 @@ func (tc *Trader) CalculateSellOrderDetails(
 func (tc *Trader) CalculateBuyOrderDetails(
 	ctx context.Context,
 	symbol string,
+	orderType model.OrderType,
 ) (exchange.BuyOrderRequestParams, error) {
-	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
-	if err != nil {
-		return exchange.BuyOrderRequestParams{}, err
-	}
+
 	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
 	if !ok {
 		return exchange.BuyOrderRequestParams{}, fmt.Errorf(
@@ -575,15 +575,29 @@ func (tc *Trader) CalculateBuyOrderDetails(
 		)
 	}
 
-	var limitPrice float64
-	if bestBidPrice >= currentPrice {
-		limitPrice = bestBidPrice
-	} else {
-		averagePrice := (bestBidPrice + currentPrice) / 2.0
-		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
+	var limitPrice *float64
+	var orderAmount float64
+
+	switch orderType {
+	case model.OrderTypeLimit:
+		bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
+		if err != nil {
+			return exchange.BuyOrderRequestParams{}, err
+		}
+
+		calcLimitPrice := bestBidPrice
+		if bestBidPrice < currentPrice {
+			averagePrice := (bestBidPrice + currentPrice) / 2.0
+			calcLimitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
+		}
+		limitPrice = &calcLimitPrice
+		orderAmount = (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / calcLimitPrice
+
+	case model.OrderTypeMarket:
+		orderAmount = (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / currentPrice
 	}
-	orderAmount := (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / limitPrice
-	stopLimit := tc.cfg.Trader.StopLossRatio * limitPrice
+
+	stopLimit := tc.cfg.Trader.StopLossRatio * currentPrice
 
 	return exchange.BuyOrderRequestParams{
 		Symbol:      symbol,

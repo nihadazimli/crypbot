@@ -44,7 +44,7 @@ type OrderInfo struct {
 	Qty       string
 	LeavesQty string
 	Symbol    string
-	Status    OrderStatus
+	Status    model.OrderStatus
 }
 
 func (oi OrderInfo) isEmpty() bool {
@@ -84,16 +84,16 @@ type OrderBookResponse struct {
 	UpdateID  int64            `json:"u"`
 }
 
-var orderStatusMap = map[string]OrderStatus{
-	"Filled":                  Filled,
-	"Cancelled":               Canceled,
-	"Rejected":                Canceled,
-	"PartiallyFilled":         PartiallyFilled,
-	"Untriggered":             Open,
-	"New":                     Open,
-	"Triggered":               Open,
-	"Deactivated":             Canceled,
-	"PartiallyFilledCanceled": PartiallyFilledCancelled,
+var orderStatusMap = map[string]model.OrderStatus{
+	"Filled":                  model.OrderFilled,
+	"Cancelled":               model.OrderCanceled,
+	"Rejected":                model.OrderCanceled,
+	"PartiallyFilled":         model.OrderPartiallyFilled,
+	"Untriggered":             model.OrderOpen,
+	"New":                     model.OrderOpen,
+	"Triggered":               model.OrderOpen,
+	"Deactivated":             model.OrderCanceled,
+	"PartiallyFilledCanceled": model.OrderPartiallyFilledCancelled,
 }
 
 const (
@@ -192,19 +192,31 @@ func (ba *Adapter) PlaceBuyOrder(
 	}
 
 	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
-	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
 	stopLossPrice := numutils.RoundDownToPrecision(params.StopLimit, precision.Price)
 
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
 		"side":        "Buy",
-		"orderType":   "Limit",
 		"qty":         strconv.FormatFloat(qty, 'f', -1, 64),
-		"price":       strconv.FormatFloat(limitPrice, 'f', -1, 64),
 		"stopLoss":    strconv.FormatFloat(stopLossPrice, 'f', -1, 64),
 		"slOrderType": "Market",
 	}
+
+	switch params.OrderType {
+	case model.OrderTypeLimit:
+		if params.LimitPrice == nil {
+			return BuyOrderResult{}, fmt.Errorf("limit price is required for limit orders")
+		}
+		limitPrice := numutils.RoundDownToPrecision(*params.LimitPrice, precision.Price)
+		requestParams["orderType"] = "Limit"
+		requestParams["price"] = strconv.FormatFloat(limitPrice, 'f', -1, 64)
+	case model.OrderTypeMarket:
+		requestParams["orderType"] = "Market"
+	default:
+		return BuyOrderResult{}, fmt.Errorf("unsupported order type: %s", params.OrderType)
+	}
+
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -323,7 +335,6 @@ func (ba *Adapter) PlaceSellOrder(
 	ctx context.Context,
 	params SellOrderRequestParams,
 ) (SellOrderResult, error) {
-
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
 		return SellOrderResult{}, fmt.Errorf(
@@ -333,16 +344,28 @@ func (ba *Adapter) PlaceSellOrder(
 	}
 
 	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
-	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
 
-	log.Printf("params: %v\n", params)
+	// Base request parameters
 	requestParams := map[string]interface{}{
-		"category":  "spot",
-		"symbol":    params.Symbol,
-		"side":      "Sell",
-		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(qty, 'f', -1, 64),
-		"price":     strconv.FormatFloat(limitPrice, 'f', -1, 64),
+		"category": "spot",
+		"symbol":   params.Symbol,
+		"side":     "Sell",
+		"qty":      strconv.FormatFloat(qty, 'f', -1, 64),
+	}
+
+	// Set order type specific parameters
+	switch params.OrderType {
+	case model.OrderTypeLimit:
+		if params.LimitPrice == nil {
+			return SellOrderResult{}, fmt.Errorf("limit price is required for limit orders")
+		}
+		limitPrice := numutils.RoundDownToPrecision(*params.LimitPrice, precision.Price)
+		requestParams["orderType"] = "Limit"
+		requestParams["price"] = strconv.FormatFloat(limitPrice, 'f', -1, 64)
+	case model.OrderTypeMarket:
+		requestParams["orderType"] = "Market"
+	default:
+		return SellOrderResult{}, fmt.Errorf("unsupported order type: %s", params.OrderType)
 	}
 
 	log.Printf("request params: %v\n", requestParams)
@@ -377,7 +400,7 @@ func (ba *Adapter) PlaceSellOrder(
 	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
 		return SellOrderResult{}, fmt.Errorf(
-			"error unmarshalling result to BuyOrderResultDetails: %s",
+			"error unmarshalling result to SellOrderResultDetails: %s",
 			err,
 		)
 	}
@@ -589,14 +612,14 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 	}, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (OrderStatus, error) {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (model.OrderStatus, error) {
 	if order, exists := ba.activeOrders[params.OrderId]; exists {
 		return order.Status, nil
 	}
 
 	order, err := ba.getOrder(ctx, params)
 	if err != nil {
-		return Invalid, err
+		return model.OrderInvalid, err
 	}
 
 	return order.Status, nil
@@ -784,12 +807,12 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 			return fmt.Errorf("bybit adapter - Unhandled Order Status. Status: %s", order.OrderStatus)
 		}
 
-		if orderStatus == PartiallyFilled {
+		if orderStatus == model.OrderPartiallyFilled {
 			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
 			if err != nil {
 				return fmt.Errorf("bybit adapter - Err: %v", err)
 			}
-			orderState = ActiveOrderTracker{Status: PartiallyFilled, RemainingQty: remainingQty}
+			orderState = ActiveOrderTracker{Status: model.OrderPartiallyFilled, RemainingQty: remainingQty}
 		} else {
 			orderState = ActiveOrderTracker{Status: orderStatus}
 		}
@@ -822,7 +845,7 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 
 	//add to existing local map before return
 	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-		Status:       PartiallyFilled,
+		Status:       model.OrderPartiallyFilled,
 		RemainingQty: remainingQty,
 	}
 	return remainingQty, nil
@@ -886,7 +909,10 @@ func (ba *Adapter) fetchOrderFromSource(
 	return ba.parseOrderResponse(response, params)
 }
 
-func (ba *Adapter) parseOrderResponse(ordersResponse *bybit.ServerResponse, params OrderRequestParams) (OrderInfo, error) {
+func (ba *Adapter) parseOrderResponse(
+	ordersResponse *bybit.ServerResponse,
+	params OrderRequestParams,
+) (OrderInfo, error) {
 
 	resultData, err := json.Marshal(ordersResponse.Result)
 	if err != nil {
@@ -1001,7 +1027,7 @@ func removeUSDTSuffix(symbol string) string {
 }
 
 // parseOrderStatus converts api response to OrderStatus map
-func parseOrderStatus(status string) (OrderStatus, bool) {
+func parseOrderStatus(status string) (model.OrderStatus, bool) {
 	enumStatus, ok := orderStatusMap[status]
 	return enumStatus, ok
 }

@@ -41,13 +41,15 @@ type BuyOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
 	OrderAmount float64
+	OrderPrice  float64
 }
 
 type BuyOrderRequestParams struct {
 	Symbol      string
-	LimitPrice  float64
+	LimitPrice  *float64
 	OrderAmount float64
 	StopLimit   float64
+	OrderType   model.OrderType
 }
 
 type SellOrderResult struct {
@@ -63,8 +65,9 @@ type SellOrderResultDetails struct {
 
 type SellOrderRequestParams struct {
 	Symbol      string
-	LimitPrice  float64
+	LimitPrice  *float64
 	OrderAmount float64
+	OrderType   model.OrderType
 }
 
 type OrderBookRequestParams struct {
@@ -104,19 +107,8 @@ type AmendOrderResult struct {
 	OrderId     string
 }
 
-type OrderStatus int
-
-const (
-	Invalid OrderStatus = iota
-	Filled
-	PartiallyFilled
-	Canceled
-	Open
-	PartiallyFilledCancelled
-)
-
 type ActiveOrderTracker struct {
-	Status       OrderStatus
+	Status       model.OrderStatus
 	RemainingQty float64
 }
 

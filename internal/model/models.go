@@ -78,3 +78,28 @@ type MovingAverage struct {
 	MA100 float64
 	MA50  float64
 }
+
+type OrderType string
+
+const (
+	OrderTypeMarket OrderType = "Market"
+	OrderTypeLimit  OrderType = "Limit"
+)
+
+type OrderSide string
+
+const (
+	OrderSideBuy  OrderSide = "Buy"
+	OrderSideSell OrderSide = "Sell"
+)
+
+type OrderStatus int
+
+const (
+	OrderInvalid OrderStatus = iota
+	OrderFilled
+	OrderPartiallyFilled
+	OrderCanceled
+	OrderOpen
+	OrderPartiallyFilledCancelled
+)
