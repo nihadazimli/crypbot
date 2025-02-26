@@ -1,6 +1,7 @@
 package order
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nihadazimli/crypbot/internal/model"
@@ -34,4 +35,23 @@ type Order struct {
 	StopLoss  *float64
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type ErrType int
+
+const (
+	ErrOrderNotModifiable ErrType = iota
+	ErrOrderNotFound
+	ErrOrderUnchangedParams
+	ErrUnexpected
+)
+
+type Error struct {
+	OrderID string
+	Type    ErrType
+	Err     error
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("order error (%s): %v", e.OrderID, e.Err)
 }

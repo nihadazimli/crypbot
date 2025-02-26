@@ -46,8 +46,34 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Order, erro
 }
 
 func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, error) {
-	//TODO implement me
-	panic("implement me")
+	order, err := m.Get(ctx, params.OrderID)
+
+	if err != nil {
+		return nil, &Error{
+			OrderID: params.OrderID,
+			Type:    ErrOrderNotFound,
+			Err:     err,
+		}
+	}
+
+	if order.Status == model.OrderFilled ||
+		order.Status == model.OrderPartiallyFilledCancelled ||
+		order.Status == model.OrderCanceled {
+		return nil, &Error{
+			OrderID: params.OrderID,
+			Type:    ErrOrderNotModifiable,
+			Err:     fmt.Errorf("order is in final state. Status: %s", order.Status),
+		}
+	}
+
+	// Try to amend order
+	amendParams := exchange.AmendOrderRequestParams{
+		Symbol:   "",
+		OrderId:  "",
+		Price:    nil,
+		Quantity: nil,
+		StopLoss: nil,
+	}
 }
 
 func (m *Manager) Cancel(ctx context.Context, orderID string) error {

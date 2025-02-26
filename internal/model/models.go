@@ -3,6 +3,7 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 type WSRawKline struct {
@@ -103,3 +104,18 @@ const (
 	OrderOpen
 	OrderPartiallyFilledCancelled
 )
+
+func (o OrderStatus) String() string {
+	names := map[OrderStatus]string{
+		OrderInvalid:                  "Invalid",
+		OrderFilled:                   "Filled",
+		OrderPartiallyFilled:          "PartiallyFilled",
+		OrderCanceled:                 "Canceled",
+		OrderOpen:                     "Open",
+		OrderPartiallyFilledCancelled: "PartiallyFilledCancelled",
+	}
+	if name, ok := names[o]; ok {
+		return name
+	}
+	return fmt.Sprintf("Unknown(%d)", o)
+}
