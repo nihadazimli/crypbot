@@ -88,7 +88,7 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 			return order, &Error{
 				OrderID: params.OrderID,
 				Type:    ErrInvalidParams,
-				Err:     fmt.Errorf("quantity is below minimum allowed: %w", err),,
+				Err:     fmt.Errorf("quantity is below minimum allowed: %w", err),
 			}
 		case errors.Is(err, exchange.AmendErrOrderDoesNotExist):
 			updateOrder, statusErr := m.Get(ctx, params.OrderID)
