@@ -44,6 +44,7 @@ const (
 	ErrOrderNotFound
 	ErrOrderUnchangedParams
 	ErrUnexpected
+	ErrInvalidParams
 )
 
 type Error struct {

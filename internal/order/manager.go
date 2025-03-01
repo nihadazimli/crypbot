@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -68,12 +69,66 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 
 	// Try to amend order
 	amendParams := exchange.AmendOrderRequestParams{
-		Symbol:   "",
-		OrderId:  "",
-		Price:    nil,
-		Quantity: nil,
-		StopLoss: nil,
+		Symbol:   params.Symbol,
+		OrderId:  params.OrderID,
+		Price:    params.Price,
+		Quantity: params.Quantity,
+		StopLoss: params.StopLoss,
 	}
+	_, err = m.exchange.AmendOrder(ctx, amendParams)
+	if err != nil {
+		switch {
+		case errors.Is(err, exchange.AmendErrUnchangedParams):
+			return order, &Error{
+				OrderID: params.OrderID,
+				Type:    ErrOrderUnchangedParams,
+				Err:     err,
+			}
+		case errors.Is(err, exchange.AmendErrQuantityTooLow):
+			return order, &Error{
+				OrderID: params.OrderID,
+				Type:    ErrInvalidParams,
+				Err:     fmt.Errorf("quantity is below minimum allowed: %w", err),,
+			}
+		case errors.Is(err, exchange.AmendErrOrderDoesNotExist):
+			updateOrder, statusErr := m.Get(ctx, params.OrderID)
+			if statusErr != nil {
+				return nil, &Error{
+					OrderID: params.OrderID,
+					Type:    ErrOrderNotFound,
+					Err:     err,
+				}
+			}
+			return updateOrder, &Error{
+				OrderID: params.OrderID,
+				Type:    ErrOrderNotModifiable,
+				Err:     fmt.Errorf("order status changed during update to %s state", updateOrder.Status),
+			}
+		default:
+			return nil, &Error{
+				OrderID: params.OrderID,
+				Type:    ErrUnexpected,
+				Err:     fmt.Errorf("failed to amend order: %w", err),
+			}
+		}
+	}
+	updatedOrder := *order
+
+	if params.Price != nil {
+		updatedOrder.Price = *params.Price
+	}
+
+	if params.Quantity != nil {
+		updatedOrder.Quantity = *params.Quantity
+	}
+
+	if params.StopLoss != nil {
+		updatedOrder.StopLoss = params.StopLoss
+	}
+
+	updatedOrder.UpdatedAt = time.Now()
+
+	return &updatedOrder, nil
 }
 
 func (m *Manager) Cancel(ctx context.Context, orderID string) error {
