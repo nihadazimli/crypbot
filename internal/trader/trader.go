@@ -426,62 +426,63 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
 func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	if len(tc.activeOrders) > 0 {
-		log.Printf("Already has a position. Active orders: %v", tc.activeOrders)
+		log.Printf("trader - checkBuyConditions - Already has a position. Active orders: %v\n", tc.activeOrders)
 		return BuyConditionCancel
 	}
 	_, exists := tc.activeOrders[symbol]
 	if exists {
-		log.Println("Already has position for given symbol")
+		log.Printf("trader - checkBuyConditions - Already has position for given symbol for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
-		log.Println("No RSI data available")
+		log.Printf("trader - checkBuyConditions - No RSI closed data available for %s\n", symbol)
 		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
 		return BuyConditionCancel
 	}
 
 	rsiClosed, rsiOk := tc.financial.GetRSIClosed(symbol)
 	if !rsiOk {
-		log.Println("No RSI data available")
+		log.Printf("trader - checkBuyConditions - No RSI live data available for %s\n", symbol)
 		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
 		return BuyConditionCancel
 	}
 
 	volumeMedian, volumeOk := tc.financial.GetVolumeValueMedian(symbol)
 	if !volumeOk {
-		log.Println("No volume data available")
+		log.Printf("trader - checkBuyConditions - No volume data available for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	movingAverages, err := tc.financial.GetMovingAverages(symbol)
 	if err != nil {
-		log.Printf("Could not retrieve MA - Err: %s\n", err)
+		log.Printf("trader - checkBuyConditions - Could not retrieve MA - Err: %s\n", err)
 		return BuyConditionCancel
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
 		log.Printf(
-			"Moving average short (%.2f) is smaller than moving average long (%.2f)\n",
+			"trader - checkBuyConditions - MA short (%.2f) is smaller than MA long (%.2f) for %s\n",
 			movingAverages.MA50,
 			movingAverages.MA100,
+			symbol,
 		)
 		return BuyConditionCancel
 	}
 
 	if rsiClosed > tc.cfg.Trader.RSIBuyValue {
-		log.Println("RSIClose too big")
+		log.Printf("trader - checkBuyConditions - RSIClose is bigger than threshold for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	if volumeMedian < tc.cfg.Trader.MedianVolumeThreshold {
-		log.Println("Median Volume below threshold")
+		log.Printf("trader - checkBuyConditions - Median Volume below threshold for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
-		log.Printf("RSI live is bigger than Araz's IQ. RSI Live:%.2f Araz's IQ: %v", rsiLive, tc.cfg.Trader.RSIBuyValue)
+		log.Printf("RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n", tc.cfg.Trader.RSIBuyValue, symbol, rsiLive)
 		return BuyConditionWait
 	}
 
