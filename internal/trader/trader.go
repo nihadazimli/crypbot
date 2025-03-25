@@ -482,7 +482,12 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	}
 
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
-		log.Printf("RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n", tc.cfg.Trader.RSIBuyValue, symbol, rsiLive)
+		log.Printf(
+			"RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n",
+			tc.cfg.Trader.RSIBuyValue,
+			symbol,
+			rsiLive,
+		)
 		return BuyConditionWait
 	}
 

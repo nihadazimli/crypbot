@@ -828,7 +828,8 @@ func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 		ba.activeOrders[order.OrderID] = orderState
 		// These states means that order is at finished state
 		// TODO: Works only with 1 active order
-		if orderStatus == model.OrderFilled || orderStatus == model.OrderPartiallyFilledCancelled || orderStatus == model.OrderCanceled {
+		if orderStatus == model.OrderFilled || orderStatus == model.OrderPartiallyFilledCancelled ||
+			orderStatus == model.OrderCanceled {
 			err := ba.StopOrderStream()
 			if err != nil {
 				return fmt.Errorf("bybit - error stopping order stream. Err: %w", err)
