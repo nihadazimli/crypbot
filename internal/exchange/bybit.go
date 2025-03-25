@@ -114,6 +114,7 @@ type Adapter struct {
 	cfg                   *config.Config
 	orderWebsocket        *websocket.WebSocketClient
 	activeOrders          map[string]ActiveOrderTracker
+	activeOrdersToFollow  map[string]struct{} // These are the orders that are state followed through order websocket
 	klineWriteChan        chan model.WSInternalKline
 	precision             map[string]model.Precision
 	precisionMutex        sync.RWMutex
@@ -128,9 +129,10 @@ func NewBybitAdapter() *Adapter {
 			cfg.Exchange.API.Secret,
 			bybit.WithBaseURL(cfg.Exchange.API.Host),
 		),
-		cfg:          cfg,
-		precision:    make(map[string]model.Precision),
-		activeOrders: make(map[string]ActiveOrderTracker),
+		cfg:                  cfg,
+		precision:            make(map[string]model.Precision),
+		activeOrders:         make(map[string]ActiveOrderTracker),
+		activeOrdersToFollow: make(map[string]struct{}),
 	}
 	ba.orderWebsocket = websocket.NewWebSocketClientPrivate(
 		ba.cfg.Exchange.WebSocket.AddressPrivate,
@@ -139,6 +141,7 @@ func NewBybitAdapter() *Adapter {
 		ba.cfg.Exchange.WebSocket.PingInterval,
 		ba.handlePrivateWSMessages,
 	)
+	ba.monitorActiveOrders(time.Duration(cfg.Exchange.WebSocket.MonitorInterval) * time.Second)
 	return ba
 }
 
@@ -188,13 +191,6 @@ func (ba *Adapter) PlaceBuyOrder(
 	ctx context.Context,
 	params BuyOrderRequestParams,
 ) (BuyOrderResult, error) {
-	if params.OrderType == model.OrderTypeLimit {
-		err := ba.StartOrderStream(ctx)
-
-		if err != nil {
-			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
-		}
-	}
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
@@ -264,6 +260,14 @@ func (ba *Adapter) PlaceBuyOrder(
 			"error unmarshalling result to BuyOrderResultDetails: %s",
 			err,
 		)
+	}
+
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.followOrder(ctx, buyDetails.OrderId)
+
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
 	}
 
 	return BuyOrderResult{
@@ -348,12 +352,6 @@ func (ba *Adapter) PlaceSellOrder(
 	ctx context.Context,
 	params SellOrderRequestParams,
 ) (SellOrderResult, error) {
-	if params.OrderType == model.OrderTypeLimit {
-		err := ba.StartOrderStream(ctx)
-		if err != nil {
-			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
-		}
-	}
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
@@ -424,7 +422,12 @@ func (ba *Adapter) PlaceSellOrder(
 			err,
 		)
 	}
-
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.followOrder(ctx, sellDetails.OrderId)
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
+	}
 	return SellOrderResult{
 		Success: true,
 		Details: SellOrderResultDetails{
@@ -645,7 +648,7 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams
 	}
 	remainingQty, err := strconv.ParseFloat(orderFromApi.LeavesQty, 64)
 	if err != nil {
-		remainingQty = 0 // default to 0 if not parsable
+		remainingQty = 0.0 // default to 0 if not parsable
 	}
 
 	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
@@ -653,14 +656,7 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams
 		RemainingQty: remainingQty,
 		LastUpdated:  time.Now(),
 	}
-	// TODO: Works only with 1 active order
-	if orderFromApi.Status == model.OrderFilled || orderFromApi.Status == model.OrderPartiallyFilledCancelled ||
-		orderFromApi.Status == model.OrderCanceled {
-		err := ba.StopOrderStream()
-		if err != nil {
-			log.Printf("bybit - error stopping order stream. Err: %v\n", err)
-		}
-	}
+
 	return orderFromApi.Status, nil
 
 }
@@ -749,8 +745,36 @@ func (ba *Adapter) handleKlineMessages(message []byte) error {
 func getSymbolFromKlineTopic(topic string) string {
 	return topic[strings.LastIndex(topic, ".")+1:]
 }
+func (ba *Adapter) monitorActiveOrders(pollInterval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
 
-func (ba *Adapter) StartOrderStream(ctx context.Context) error {
+		for range ticker.C {
+			for orderId := range ba.activeOrdersToFollow {
+				state, exists := ba.activeOrders[orderId]
+				if !exists {
+					continue // no update yet, wait for next tick
+				}
+
+				if state.Status == model.OrderFilled ||
+					state.Status == model.OrderCanceled ||
+					state.Status == model.OrderPartiallyFilledCancelled {
+					delete(ba.activeOrdersToFollow, orderId)
+					log.Printf("Order %s reached final state (%s), removed from watch list\n", orderId, state.Status)
+				}
+			}
+
+			if len(ba.activeOrdersToFollow) == 0 && ba.orderStreamSubscribed {
+				log.Println("No active orders left. Stopping order stream.")
+				ba.unsubscribeFromOrderStream()
+				ba.orderStreamSubscribed = false
+			}
+		}
+	}()
+}
+
+func (ba *Adapter) followOrder(ctx context.Context, orderId string) error {
 	if !ba.orderStreamSubscribed {
 		err := ba.subscribeToOrderStream(ctx)
 		if err != nil {
@@ -758,19 +782,11 @@ func (ba *Adapter) StartOrderStream(ctx context.Context) error {
 		}
 		ba.orderStreamSubscribed = true
 	}
+
+	ba.activeOrdersToFollow[orderId] = struct{}{}
 	return nil
 }
 
-func (ba *Adapter) StopOrderStream() error {
-	if ba.orderStreamSubscribed {
-		err := ba.unsubscribeFromOrderStream()
-		if err != nil {
-			return err
-		}
-		ba.orderStreamSubscribed = false
-	}
-	return nil
-}
 func (ba *Adapter) unsubscribeFromOrderStream() error {
 	ba.orderWebsocket.Shutdown()
 	return nil

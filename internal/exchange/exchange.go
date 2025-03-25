@@ -23,6 +23,4 @@ type Exchange interface {
 		params OrderRequestParams,
 	) (float64, error)
 	GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error)
-	StartOrderStream(ctx context.Context) error
-	StopOrderStream() error
 }
