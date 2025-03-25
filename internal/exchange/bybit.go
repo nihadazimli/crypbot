@@ -643,7 +643,24 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams
 	if err != nil {
 		return model.OrderInvalid, err
 	}
+	remainingQty, err := strconv.ParseFloat(orderFromApi.LeavesQty, 64)
+	if err != nil {
+		remainingQty = 0 // default to 0 if not parsable
+	}
 
+	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+		Status:       orderFromApi.Status,
+		RemainingQty: remainingQty,
+		LastUpdated:  time.Now(),
+	}
+	// TODO: Works only with 1 active order
+	if orderFromApi.Status == model.OrderFilled || orderFromApi.Status == model.OrderPartiallyFilledCancelled ||
+		orderFromApi.Status == model.OrderCanceled {
+		err := ba.StopOrderStream()
+		if err != nil {
+			log.Printf("bybit - error stopping order stream. Err: %v\n", err)
+		}
+	}
 	return orderFromApi.Status, nil
 
 }
