@@ -1,3 +1,4 @@
+// Package order is managing order lifecycle. It adds abstraction between trader and exchange to make
 package order
 
 import (

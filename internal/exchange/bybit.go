@@ -114,7 +114,7 @@ type Adapter struct {
 	orderStreamSubscribed bool
 }
 
-func NewBybitAdapter(ctx context.Context) *Adapter {
+func NewBybitAdapter() *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
 		BybitClient: bybit.NewBybitHttpClient(
@@ -127,7 +127,6 @@ func NewBybitAdapter(ctx context.Context) *Adapter {
 		activeOrders: make(map[string]ActiveOrderTracker),
 	}
 	ba.orderWebsocket = websocket.NewWebSocketClientPrivate(
-		ctx,
 		ba.cfg.Exchange.WebSocket.AddressPrivate,
 		ba.cfg.Exchange.API.Key,
 		ba.cfg.Exchange.API.Secret,
@@ -183,6 +182,11 @@ func (ba *Adapter) PlaceBuyOrder(
 	ctx context.Context,
 	params BuyOrderRequestParams,
 ) (BuyOrderResult, error) {
+	err := ba.StartOrderStream(ctx)
+	if err != nil {
+		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+	}
+
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
 		return BuyOrderResult{}, fmt.Errorf(
@@ -335,6 +339,11 @@ func (ba *Adapter) PlaceSellOrder(
 	ctx context.Context,
 	params SellOrderRequestParams,
 ) (SellOrderResult, error) {
+	err := ba.StartOrderStream(ctx)
+	if err != nil {
+		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+	}
+
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
 		return SellOrderResult{}, fmt.Errorf(
@@ -617,7 +626,7 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams
 		return order.Status, nil
 	}
 
-	order, err := ba.getOrder(ctx, params)
+	order, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
 		return model.OrderInvalid, err
 	}
@@ -668,14 +677,13 @@ func (ba *Adapter) StartKlineStream(
 
 	for _, chunk := range symbolChunks {
 		ws := websocket.NewWebSocketClientPublic(
-			ctx,
 			ba.cfg.Exchange.WebSocket.AddressPublic,
 			ba.cfg.Exchange.WebSocket.PingInterval,
 			ba.handleKlineMessages,
 		)
 		ba.klineWriteChan = params.KlineWriteChan
 
-		err := ws.ConnectAndStart(chunk)
+		err := ws.ConnectAndStart(ctx, chunk)
 		if err != nil {
 			for _, ws := range webSockets {
 				ws.Shutdown()
@@ -712,9 +720,9 @@ func getSymbolFromKlineTopic(topic string) string {
 	return topic[strings.LastIndex(topic, ".")+1:]
 }
 
-func (ba *Adapter) StartOrderStream() error {
+func (ba *Adapter) StartOrderStream(ctx context.Context) error {
 	if !ba.orderStreamSubscribed {
-		err := ba.subscribeToOrderStream()
+		err := ba.subscribeToOrderStream(ctx)
 		if err != nil {
 			return err
 		}
@@ -738,8 +746,8 @@ func (ba *Adapter) unsubscribeFromOrderStream() error {
 	return nil
 }
 
-func (ba *Adapter) subscribeToOrderStream() error {
-	err := ba.orderWebsocket.ConnectAndStart([]string{"order"})
+func (ba *Adapter) subscribeToOrderStream(ctx context.Context) error {
+	err := ba.orderWebsocket.ConnectAndStart(ctx, []string{"order"})
 	if err != nil {
 		return err
 	}
@@ -756,7 +764,7 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 
 	switch privateMessage.Topic {
 	case "order":
-		return ba.handleOrderData(privateMessage.Data)
+		return ba.handleOrderMessage(privateMessage.Data)
 	default:
 		log.Printf(
 			"unhandled topic: %s,Data:%s\n",
@@ -791,7 +799,7 @@ func (ba *Adapter) getPrecision(ctx context.Context, symbol string) (model.Preci
 	return ba.precision[symbol], nil
 }
 
-func (ba *Adapter) handleOrderData(data json.RawMessage) error {
+func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 	var orders []model.BybitWSOrderData
 	err := json.Unmarshal(data, &orders)
 	if err != nil {
@@ -804,19 +812,28 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 		orderStatus, ok := parseOrderStatus(order.OrderStatus)
 
 		if !ok {
-			return fmt.Errorf("bybit adapter - Unhandled Order Status. Status: %s", order.OrderStatus)
+			return fmt.Errorf("bybit - Unhandled Order Status. Status: %s", order.OrderStatus)
 		}
 
 		if orderStatus == model.OrderPartiallyFilled {
 			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
 			if err != nil {
-				return fmt.Errorf("bybit adapter - Err: %v", err)
+				return fmt.Errorf("bybit - Err: %v", err)
 			}
 			orderState = ActiveOrderTracker{Status: model.OrderPartiallyFilled, RemainingQty: remainingQty}
 		} else {
 			orderState = ActiveOrderTracker{Status: orderStatus}
 		}
+
 		ba.activeOrders[order.OrderID] = orderState
+		// These states means that order is at finished state
+		// TODO: Works only with 1 active order
+		if orderStatus == model.OrderFilled || orderStatus == model.OrderPartiallyFilledCancelled || orderStatus == model.OrderCanceled {
+			err := ba.StopOrderStream()
+			if err != nil {
+				return fmt.Errorf("bybit - error stopping order stream. Err: %w", err)
+			}
+		}
 	}
 	return nil
 }
@@ -829,7 +846,7 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 		return order.RemainingQty, nil // If it exists locally, return it directly.
 	}
 
-	openOrderInfo, err := ba.getOrder(ctx, params)
+	openOrderInfo, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
 		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
 	}
@@ -851,8 +868,8 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 	return remainingQty, nil
 }
 
-// getOrder fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
-func (ba *Adapter) getOrder(
+// getOrderWithApi fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
+func (ba *Adapter) getOrderWithApi(
 	ctx context.Context,
 	params OrderRequestParams,
 ) (OrderInfo, error) {
@@ -930,7 +947,7 @@ func (ba *Adapter) parseOrderResponse(
 			orderStatus, ok := parseOrderStatus(entry.OrderStatus)
 			if !ok {
 				return OrderInfo{}, fmt.Errorf(
-					"bybit adapter - get_open_order - Cannot parse unknown order status. Status: %s",
+					"bybit - get_open_order - Cannot parse unknown order status. Status: %s",
 					entry.OrderStatus,
 				)
 			}

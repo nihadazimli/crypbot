@@ -33,7 +33,6 @@ type WebSocketClient struct {
 type MessageHandler func(message []byte) error
 
 func NewWebSocketClientPublic(
-	ctx context.Context,
 	url string,
 	pingInterval int,
 	handler MessageHandler,
@@ -45,13 +44,11 @@ func NewWebSocketClientPublic(
 		pingInterval: pingInterval,
 		isPrivate:    false,
 	}
-	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	return c
 }
 
 func NewWebSocketClientPrivate(
-	ctx context.Context,
 	url string,
 	apiKey string,
 	apiSecret string,
@@ -67,12 +64,11 @@ func NewWebSocketClientPrivate(
 		apiKey:       apiKey,
 		apiSecret:    apiSecret,
 	}
-	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	return c
 }
 
-func (c *WebSocketClient) ConnectAndStart(topics []string) error {
+func (c *WebSocketClient) ConnectAndStart(ctx context.Context, topics []string) error {
 	var err error
 	c.conn, _, err = websocket.DefaultDialer.Dial(c.url, nil)
 
@@ -90,17 +86,18 @@ func (c *WebSocketClient) ConnectAndStart(topics []string) error {
 	}
 
 	c.isConnected = true
+	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	c.subscribe(topics)
 	go c.keepAlive(c.pingInterval)
 	go c.readPump()
-	go c.monitorConnection(topics)
+	go c.monitorConnection(ctx, topics)
 
 	return nil
 
 }
 
-func (c *WebSocketClient) monitorConnection(topics []string) {
+func (c *WebSocketClient) monitorConnection(ctx context.Context, topics []string) {
 	ticker := time.NewTicker(time.Second * time.Duration(c.pingInterval))
 	defer ticker.Stop()
 
@@ -111,7 +108,7 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 				delay := time.Millisecond * time.Duration(rand.Float64()*4000+1000) // 1000 to 5000 milliseconds
 				log.Printf("Attempting to reconnect for %s after %v milliseconds...\n", c.url, delay)
 				time.Sleep(delay)
-				err := c.ConnectAndStart(topics)
+				err := c.ConnectAndStart(ctx, topics)
 				if err != nil {
 					log.Println("Cannot reconnect to web socket...")
 					continue
@@ -128,25 +125,33 @@ func (c *WebSocketClient) monitorConnection(topics []string) {
 }
 
 func (c *WebSocketClient) Shutdown() {
-	// Cancel the context to stop any associated goroutines
-	c.cancel()
+	if !c.isConnected {
+		return
+	}
 
-	// Create a close message
+	// Cancel context
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
+
+	// Send close message
 	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closing connection")
-
-	// Send the close message with a specified timeout
 	err := c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
 	if err != nil && !errors.Is(err, websocket.ErrCloseSent) {
 		log.Printf("Failed to send close message: %v", err)
 	}
 
-	// Close the WebSocket connection regardless of whether the close message was sent successfully
+	// Close WebSocket connection
 	err = c.conn.Close()
 	if err != nil {
 		log.Printf("Failed to close WebSocket connection: %v", err)
 	} else {
 		log.Println("WebSocket connection closed successfully.")
 	}
+
+	c.conn = nil
+	c.isConnected = false
 }
 
 func (c *WebSocketClient) subscribe(topic []string) {

@@ -129,12 +129,6 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck boo
 	return nil
 }
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
-	err := tc.exchange.StartOrderStream()
-	if err != nil {
-		return fmt.Errorf("cannot start listening to order stream. Err: %v", err)
-	}
-	defer tc.exchange.StopOrderStream()
-
 	order, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
@@ -346,16 +340,6 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 
 func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
-	err := tc.exchange.StartOrderStream()
-	if err != nil {
-		return false
-	}
-	defer func() {
-		err := tc.exchange.StopOrderStream()
-		if err != nil {
-			log.Printf("Order stream cannot be stopped! Err:%v\n", err)
-		}
-	}()
 	order, err := tc.placeFastSellOrder(ctx, symbol)
 	if err != nil {
 		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
