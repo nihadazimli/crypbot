@@ -107,11 +107,6 @@ type AmendOrderResult struct {
 	OrderId     string
 }
 
-type ActiveOrderTracker struct {
-	Status       model.OrderStatus
-	RemainingQty float64
-}
-
 type OrderRequestParams struct {
 	OrderId string
 	Symbol  string

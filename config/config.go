@@ -67,7 +67,8 @@ type TraderConfig struct {
 }
 
 type Defaults struct {
-	MissingDataValue float64 `yaml:"missing_data_value"`
+	MissingDataValue         float64 `yaml:"missing_data_value"`
+	OrderStatusCacheDuration int     `yaml:"order_status_cache_duration"`
 }
 
 var cfg *Config

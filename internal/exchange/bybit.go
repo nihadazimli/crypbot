@@ -38,6 +38,12 @@ const (
 	OrderSourceHistory
 )
 
+type ActiveOrderTracker struct {
+	Status       model.OrderStatus
+	RemainingQty float64
+	LastUpdated  time.Time
+}
+
 type OrderInfo struct {
 	OrderId   string
 	Price     string
@@ -182,9 +188,12 @@ func (ba *Adapter) PlaceBuyOrder(
 	ctx context.Context,
 	params BuyOrderRequestParams,
 ) (BuyOrderResult, error) {
-	err := ba.StartOrderStream(ctx)
-	if err != nil {
-		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.StartOrderStream(ctx)
+
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
 	}
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
@@ -339,9 +348,11 @@ func (ba *Adapter) PlaceSellOrder(
 	ctx context.Context,
 	params SellOrderRequestParams,
 ) (SellOrderResult, error) {
-	err := ba.StartOrderStream(ctx)
-	if err != nil {
-		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.StartOrderStream(ctx)
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
 	}
 
 	precision, err := ba.getPrecision(ctx, params.Symbol)
@@ -622,16 +633,18 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 }
 
 func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (model.OrderStatus, error) {
-	if order, exists := ba.activeOrders[params.OrderId]; exists {
+	order, exists := ba.activeOrders[params.OrderId]
+
+	if exists && time.Since(order.LastUpdated) <= ba.getOrderStatusCacheDuration() {
 		return order.Status, nil
 	}
 
-	order, err := ba.getOrderWithApi(ctx, params)
+	orderFromApi, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
 		return model.OrderInvalid, err
 	}
 
-	return order.Status, nil
+	return orderFromApi.Status, nil
 
 }
 
@@ -818,11 +831,16 @@ func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 		if orderStatus == model.OrderPartiallyFilled {
 			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
 			if err != nil {
-				return fmt.Errorf("bybit - Err: %v", err)
+				remainingQty = 0.0
+				log.Printf("bybit - error parsing remaining quantity. Err: %v\n", err)
 			}
-			orderState = ActiveOrderTracker{Status: model.OrderPartiallyFilled, RemainingQty: remainingQty}
+			orderState = ActiveOrderTracker{
+				Status:       model.OrderPartiallyFilled,
+				RemainingQty: remainingQty,
+				LastUpdated:  time.Now(),
+			}
 		} else {
-			orderState = ActiveOrderTracker{Status: orderStatus}
+			orderState = ActiveOrderTracker{Status: orderStatus, LastUpdated: time.Now()}
 		}
 
 		ba.activeOrders[order.OrderID] = orderState
@@ -863,8 +881,9 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 
 	//add to existing local map before return
 	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-		Status:       model.OrderPartiallyFilled,
+		Status:       openOrderInfo.Status,
 		RemainingQty: remainingQty,
+		LastUpdated:  time.Now(),
 	}
 	return remainingQty, nil
 }
@@ -884,10 +903,6 @@ func (ba *Adapter) getOrderWithApi(
 	if err != nil {
 		return OrderInfo{}, fmt.Errorf("failed to fetch realtime order: %w", err)
 	}
-	if !orderInfo.isEmpty() {
-		return orderInfo, nil
-	}
-
 	if !orderInfo.isEmpty() {
 		return orderInfo, nil
 	}
@@ -1028,6 +1043,10 @@ func (ba *Adapter) createKlineTopics(symbols []string, interval int) []string {
 		klineTopics = append(klineTopics, constructKlineTopic(symbol, interval))
 	}
 	return klineTopics
+}
+
+func (ba *Adapter) getOrderStatusCacheDuration() time.Duration {
+	return time.Duration(ba.cfg.Defaults.OrderStatusCacheDuration) * time.Second
 }
 
 func constructKlineTopic(symbol string, klineInterval int) string {
