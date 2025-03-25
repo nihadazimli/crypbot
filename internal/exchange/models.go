@@ -107,9 +107,14 @@ type AmendOrderResult struct {
 	OrderId     string
 }
 
-type OrderRequestParams struct {
+type OrderStatusRequestParams struct {
 	OrderId string
 	Symbol  string
+}
+
+type OrderStatusResponse struct {
+	OrderStatus  model.OrderStatus
+	RemainingQty float64
 }
 
 var (

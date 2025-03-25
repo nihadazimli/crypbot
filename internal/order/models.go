@@ -25,34 +25,41 @@ type UpdateParams struct {
 }
 
 type Order struct {
-	ID        string
-	Symbol    string
-	Side      model.OrderSide // Buy/Sell
-	Type      model.OrderType // Market/Limit
-	Status    model.OrderStatus
-	Price     float64
-	Quantity  float64
-	StopLoss  *float64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           string
+	Symbol       string
+	Side         model.OrderSide // Buy/Sell
+	Type         model.OrderType // Market/Limit
+	Status       model.OrderStatus
+	Price        float64
+	Quantity     float64
+	FilledQty    float64
+	RemainingQty float64
+	StopLoss     *float64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
-type ErrType int
+type ErrorType string
 
 const (
-	ErrOrderNotModifiable ErrType = iota
-	ErrOrderNotFound
-	ErrOrderUnchangedParams
-	ErrUnexpected
-	ErrInvalidParams
+	ErrOrderNotFound        ErrorType = "OrderNotFound"
+	ErrOrderNotModifiable   ErrorType = "OrderNotModifiable"
+	ErrOrderNotCancelable   ErrorType = "OrderNotCancelable"
+	ErrOrderUnchangedParams ErrorType = "OrderUnchangedParams"
+	ErrInvalidParams        ErrorType = "InvalidParams"
+	ErrUnexpected           ErrorType = "UnexpectedError"
 )
 
 type Error struct {
 	OrderID string
-	Type    ErrType
+	Type    ErrorType
 	Err     error
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("order error (%s): %v", e.OrderID, e.Err)
+	return fmt.Sprintf("Order Error [%s] %s: %v", e.OrderID, e.Type, e.Err)
+}
+
+func (e *Error) Unwrap() error {
+	return e.Err
 }

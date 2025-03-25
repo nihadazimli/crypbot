@@ -133,13 +133,62 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 }
 
 func (m *Manager) Cancel(ctx context.Context, orderID string) error {
-	//TODO implement me
-	panic("implement me")
-}
+	order, err := m.Get(ctx, orderID)
+	if err != nil {
+		return &Error{
+			OrderID: orderID,
+			Type:    ErrOrderNotFound,
+			Err:     fmt.Errorf("cancel - order not found: %w", err),
+		}
+	}
 
+	if order.Status == model.OrderFilled ||
+		order.Status == model.OrderCanceled ||
+		order.Status == model.OrderPartiallyFilledCancelled {
+		return &Error{
+			OrderID: orderID,
+			Type:    ErrOrderNotCancelable,
+			Err:     fmt.Errorf("cancel - order in final state (%s)", order.Status),
+		}
+	}
+
+	cancelParams := exchange.CancelOrderRequestParams{
+		Symbol:  order.Symbol,
+		OrderId: orderID,
+	}
+
+	_, err = m.exchange.CancelOrder(ctx, cancelParams)
+	if err != nil {
+		return &Error{
+			OrderID: orderID,
+			Type:    ErrUnexpected,
+			Err:     fmt.Errorf("cancel - failed to cancel order: %w", err),
+		}
+	}
+
+	return nil
+}
 func (m *Manager) Get(ctx context.Context, orderID string) (*Order, error) {
-	//TODO implement me
-	panic("implement me")
+	params := exchange.OrderStatusRequestParams{
+		OrderId: orderID,
+	}
+
+	order, err := m.exchange.GetOrderStatus(ctx, params)
+	if err != nil {
+		return nil, &Error{
+			OrderID: orderID,
+			Type:    ErrOrderNotFound,
+			Err:     fmt.Errorf("get - failed to fetch order status: %w", err),
+		}
+	}
+
+	return &Order{
+		ID:        orderID,
+		Symbol:    params.Symbol, // Ensure symbol is tracked properly
+		Status:    order.OrderStatus,
+		Quantity:  order.RemainingQty,
+		UpdatedAt: time.Now(),
+	}, nil
 }
 
 func (m *Manager) createBuyOrder(ctx context.Context, params CreateParams) (*Order, error) {
@@ -168,8 +217,8 @@ func (m *Manager) createBuyOrder(ctx context.Context, params CreateParams) (*Ord
 		Status:    model.OrderOpen,
 		Quantity:  order.Details.OrderAmount,
 		StopLoss:  params.StopLoss,
-		CreatedAt: time.Time{},
-		UpdatedAt: time.Time{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	return &result, nil
@@ -203,8 +252,8 @@ func (m *Manager) createSellOrder(ctx context.Context, params CreateParams) (*Or
 		Status:    model.OrderOpen,
 		Quantity:  params.Quantity,
 		StopLoss:  nil,
-		CreatedAt: time.Time{},
-		UpdatedAt: time.Time{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	return &orderResult, nil

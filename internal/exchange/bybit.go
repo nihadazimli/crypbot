@@ -635,16 +635,16 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 	}, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (model.OrderStatus, error) {
+func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderStatusRequestParams) (OrderStatusResponse, error) {
 	order, exists := ba.activeOrders[params.OrderId]
 
 	if exists && time.Since(order.LastUpdated) <= ba.getOrderStatusCacheDuration() {
-		return order.Status, nil
+		return OrderStatusResponse{OrderStatus: order.Status, RemainingQty: order.RemainingQty}, nil
 	}
 
 	orderFromApi, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
-		return model.OrderInvalid, err
+		return OrderStatusResponse{OrderStatus: model.OrderInvalid, RemainingQty: -1}, err
 	}
 	remainingQty, err := strconv.ParseFloat(orderFromApi.LeavesQty, 64)
 	if err != nil {
@@ -657,7 +657,7 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams
 		LastUpdated:  time.Now(),
 	}
 
-	return orderFromApi.Status, nil
+	return OrderStatusResponse{OrderStatus: orderFromApi.Status, RemainingQty: remainingQty}, nil
 
 }
 
@@ -883,7 +883,7 @@ func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 
 func (ba *Adapter) GetRemainingQtyForPartialOrder(
 	ctx context.Context,
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 ) (float64, error) {
 	if order, exists := ba.activeOrders[params.OrderId]; exists {
 		return order.RemainingQty, nil // If it exists locally, return it directly.
@@ -915,7 +915,7 @@ func (ba *Adapter) GetRemainingQtyForPartialOrder(
 // getOrderWithApi fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
 func (ba *Adapter) getOrderWithApi(
 	ctx context.Context,
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 ) (OrderInfo, error) {
 	queryParams := map[string]interface{}{
 		"category": "spot",
@@ -946,7 +946,7 @@ func (ba *Adapter) getOrderWithApi(
 func (ba *Adapter) fetchOrderFromSource(
 	ctx context.Context,
 	queryParams map[string]interface{},
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 	source OrderSource,
 ) (OrderInfo, error) {
 	var response *bybit.ServerResponse
@@ -968,7 +968,7 @@ func (ba *Adapter) fetchOrderFromSource(
 
 func (ba *Adapter) parseOrderResponse(
 	ordersResponse *bybit.ServerResponse,
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 ) (OrderInfo, error) {
 
 	resultData, err := json.Marshal(ordersResponse.Result)

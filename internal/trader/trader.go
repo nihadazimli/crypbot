@@ -129,13 +129,13 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck boo
 	return nil
 }
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
-	order, err := tc.placeFastBuyOrder(ctx, symbol)
+	fastBuyOrder, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
 		return fmt.Errorf("cannot place order. %v", err)
 	}
 
-	return tc.monitorBuyOrder(ctx, order, symbol)
+	return tc.monitorBuyOrder(ctx, fastBuyOrder, symbol)
 }
 
 func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.BuyOrderResult, symbol string) error {
@@ -147,11 +147,11 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 		case <-ctx.Done():
 			return fmt.Errorf("monitorBuyOrder - context cancelled while monitoring buy for %s", symbol)
 		case <-ticker.C:
-			orderStatusParams := exchange.OrderRequestParams{
+			orderStatusParams := exchange.OrderStatusRequestParams{
 				OrderId: initialOrder.Details.OrderId,
 				Symbol:  symbol,
 			}
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
+			currOrder, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 			if err != nil {
 				return fmt.Errorf(
 					"monitorBuyOrder - not found initialOrder id %s. Err: %v",
@@ -160,7 +160,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 				)
 			}
 
-			switch orderStatus {
+			switch currOrder.OrderStatus {
 			case model.OrderFilled, model.OrderPartiallyFilledCancelled:
 				log.Printf("Order filled for %s\n", symbol)
 				tc.triggerSell(symbol)
@@ -238,7 +238,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 				}
 				return nil
 			default:
-				log.Printf("Order Status: %v This status is not handled\n", orderStatus)
+				log.Printf("Order Status: %v This status is not handled\n", currOrder)
 				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
@@ -340,7 +340,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 
 func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
-	order, err := tc.placeFastSellOrder(ctx, symbol)
+	fastSellOrder, err := tc.placeFastSellOrder(ctx, symbol)
 	if err != nil {
 		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
 	}
@@ -352,22 +352,22 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			log.Println("Stopping executing sell order")
 			return false
 		case <-sellTicker.C:
-			orderStatusParams := exchange.OrderRequestParams{
-				OrderId: order.Details.OrderId,
+			orderStatusParams := exchange.OrderStatusRequestParams{
+				OrderId: fastSellOrder.Details.OrderId,
 				Symbol:  symbol,
 			}
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
+			currOrder, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 
 			if err != nil {
 				log.Printf(
 					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
-					order.Details.OrderId,
+					fastSellOrder.Details.OrderId,
 				)
 				continue
 			}
 
-			if orderStatus == model.OrderFilled {
+			if currOrder.OrderStatus == model.OrderFilled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				return true
 			}
@@ -378,22 +378,12 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if orderStatus == model.OrderPartiallyFilled {
-				params := exchange.OrderRequestParams{OrderId: order.Details.OrderId, Symbol: symbol}
-				remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
-				if err != nil {
-					log.Printf(
-						"Can't get Remaining qty for sell order %s. Error: %v\n",
-						order.Details.OrderId,
-						err,
-					)
-					continue
-				}
-				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+			if currOrder.OrderStatus == model.OrderPartiallyFilled {
+				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
 			}
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
-				OrderId:  order.Details.OrderId,
+				OrderId:  fastSellOrder.Details.OrderId,
 				Price:    orderParams.LimitPrice,
 				Quantity: nil, // TODO: Check if any drawbacks
 				StopLoss: nil,
@@ -411,7 +401,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					}
 					return true
 				} else {
-					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", order.Details.OrderId, err)
+					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", fastSellOrder.Details.OrderId, err)
 					err = tc.gracefullyFinishOrder(ctx, symbol, true)
 					if err != nil {
 						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
@@ -644,7 +634,7 @@ func (tc *Trader) getOrderBook(
 
 func (tc *Trader) getBestBidPrice(ctx context.Context, symbol string) (float64, error) {
 
-	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e highest bid)
+	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value that is the highest bid
 	if err != nil {
 		return 0, err
 	}
@@ -654,7 +644,7 @@ func (tc *Trader) getBestBidPrice(ctx context.Context, symbol string) (float64, 
 }
 
 func (tc *Trader) getBestAskPrice(ctx context.Context, symbol string) (float64, error) {
-	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e. lowest ask)
+	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value that is the lowest ask
 	if err != nil {
 		return 0, err
 	}

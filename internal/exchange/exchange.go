@@ -3,8 +3,6 @@ package exchange
 
 import (
 	"context"
-
-	"github.com/nihadazimli/crypbot/internal/model"
 )
 
 type Exchange interface {
@@ -17,10 +15,6 @@ type Exchange interface {
 	CancelAllTPSLOrders(ctx context.Context, symbol string) error
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (SymbolBalanceResult, error)
-	GetOrderStatus(ctx context.Context, params OrderRequestParams) (model.OrderStatus, error)
-	GetRemainingQtyForPartialOrder(
-		ctx context.Context,
-		params OrderRequestParams,
-	) (float64, error)
+	GetOrderStatus(ctx context.Context, params OrderStatusRequestParams) (OrderStatusResponse, error)
 	GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error)
 }
