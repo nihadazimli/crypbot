@@ -160,7 +160,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 				)
 			}
 
-			switch currOrder.OrderStatus {
+			switch currOrder.Status {
 			case model.OrderFilled, model.OrderPartiallyFilledCancelled:
 				log.Printf("Order filled for %s\n", symbol)
 				tc.triggerSell(symbol)
@@ -367,7 +367,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if currOrder.OrderStatus == model.OrderFilled {
+			if currOrder.Status == model.OrderFilled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				return true
 			}
@@ -378,7 +378,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if currOrder.OrderStatus == model.OrderPartiallyFilled {
+			if currOrder.Status == model.OrderPartiallyFilled {
 				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
 			}
 			params := exchange.AmendOrderRequestParams{

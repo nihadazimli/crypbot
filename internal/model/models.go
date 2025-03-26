@@ -4,6 +4,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type WSRawKline struct {
@@ -21,13 +22,17 @@ type BybitWSPrivateMessage struct {
 }
 
 type BybitWSOrderData struct {
-	OrderID     string `json:"orderId"`
-	Qty         string `json:"qty"`
-	CumExecQty  string `json:"cumExecQty"`
-	AvgPrice    string `json:"avgPrice"`
-	OrderStatus string `json:"orderStatus"`
-	Symbol      string `json:"symbol"`
-	LeavesQty   string `json:"leavesQty"`
+	OrderID     string  `json:"orderId"`
+	Qty         float64 `json:"qty,string"`
+	CumExecQty  string  `json:"cumExecQty"`
+	AvgPrice    float64 `json:"avgPrice,string"`
+	Status      string  `json:"orderStatus"`
+	Symbol      string  `json:"symbol"`
+	LeavesQty   float64 `json:"leavesQty,string"`
+	Side        string  `json:"side"`
+	Type        string  `json:"orderType"`
+	CreatedTime int     `json:"createdTime"`
+	UpdatedTime int     `json:"updatedTime"`
 }
 
 type WSKlineData struct {
@@ -83,16 +88,40 @@ type MovingAverage struct {
 type OrderType string
 
 const (
-	OrderTypeMarket OrderType = "Market"
-	OrderTypeLimit  OrderType = "Limit"
+	OrderTypeMarket  OrderType = "Market"
+	OrderTypeLimit   OrderType = "Limit"
+	OrderTypeUnknown OrderType = "N/A"
 )
+
+func ParseOrderType(orderType string) OrderType {
+	switch strings.ToUpper(orderType) {
+	case "MARKET":
+		return OrderTypeMarket
+	case "LIMIT":
+		return OrderTypeLimit
+	default:
+		return OrderTypeUnknown
+	}
+}
 
 type OrderSide string
 
 const (
-	OrderSideBuy  OrderSide = "Buy"
-	OrderSideSell OrderSide = "Sell"
+	OrderSideBuy     OrderSide = "Buy"
+	OrderSideSell    OrderSide = "Sell"
+	OrderSideUnknown OrderSide = "N/A"
 )
+
+func ParseOrderSide(side string) OrderSide {
+	switch strings.ToUpper(side) {
+	case "BUY":
+		return OrderSideBuy
+	case "SELL":
+		return OrderSideSell
+	default:
+		return OrderSideUnknown
+	}
+}
 
 type OrderStatus int
 
@@ -118,4 +147,12 @@ func (o OrderStatus) String() string {
 		return name
 	}
 	return fmt.Sprintf("Unknown(%d)", o)
+}
+func (o OrderStatus) IsFinished() bool {
+	switch o {
+	case OrderFilled, OrderCanceled, OrderPartiallyFilledCancelled:
+		return true
+	default:
+		return false
+	}
 }

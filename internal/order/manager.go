@@ -58,9 +58,7 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 		}
 	}
 
-	if order.Status == model.OrderFilled ||
-		order.Status == model.OrderPartiallyFilledCancelled ||
-		order.Status == model.OrderCanceled {
+	if order.Status.IsFinished() {
 		return nil, &Error{
 			OrderID: params.OrderID,
 			Type:    ErrOrderNotModifiable,
@@ -142,9 +140,7 @@ func (m *Manager) Cancel(ctx context.Context, orderID string) error {
 		}
 	}
 
-	if order.Status == model.OrderFilled ||
-		order.Status == model.OrderCanceled ||
-		order.Status == model.OrderPartiallyFilledCancelled {
+	if order.Status.IsFinished() {
 		return &Error{
 			OrderID: orderID,
 			Type:    ErrOrderNotCancelable,
@@ -183,11 +179,16 @@ func (m *Manager) Get(ctx context.Context, orderID string) (*Order, error) {
 	}
 
 	return &Order{
-		ID:        orderID,
-		Symbol:    params.Symbol, // Ensure symbol is tracked properly
-		Status:    order.OrderStatus,
-		Quantity:  order.RemainingQty,
-		UpdatedAt: time.Now(),
+		ID:           orderID,
+		Symbol:       order.Symbol,
+		Price:        order.Price,
+		Side:         order.Side,
+		Type:         order.Type,
+		Status:       order.Status,
+		Quantity:     order.RemainingQty,
+		RemainingQty: order.RemainingQty,
+		UpdatedAt:    order.UpdatedAt,
+		CreatedAt:    order.CreatedAt,
 	}, nil
 }
 

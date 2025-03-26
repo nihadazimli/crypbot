@@ -23,12 +23,16 @@ import (
 
 type OrderInfoResult struct {
 	List []struct {
-		OrderId     string `json:"orderId"`
-		Price       string `json:"price"`
-		Qty         string `json:"qty"`
-		LeavesQty   string `json:"leavesQty"`
-		Symbol      string `json:"symbol"`
-		OrderStatus string `json:"orderStatus"`
+		OrderId     string  `json:"orderId"`
+		Price       float64 `json:"price,string"`
+		Qty         float64 `json:"qty,string"`
+		LeavesQty   float64 `json:"leavesQty,string"`
+		Symbol      string  `json:"symbol"`
+		Status      string  `json:"orderStatus"`
+		Side        string  `json:"side"`
+		CreatedTime int     `json:"createdTime,string"`
+		UpdatedTime int     `json:"updatedTime,string"`
+		Type        string  `json:"orderType"`
 	}
 }
 type OrderSource int
@@ -40,17 +44,28 @@ const (
 
 type ActiveOrderTracker struct {
 	Status       model.OrderStatus
+	Symbol       string
+	Price        float64
+	Type         model.OrderType
 	RemainingQty float64
-	LastUpdated  time.Time
+	Qty          float64
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
+	Side         model.OrderSide
+	LastUpdated  time.Time // Last time order tracker received data
 }
 
 type OrderInfo struct {
 	OrderId   string
-	Price     string
-	Qty       string
-	LeavesQty string
+	Price     float64
+	Qty       float64
+	LeavesQty float64
 	Symbol    string
 	Status    model.OrderStatus
+	Side      model.OrderSide
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Type      model.OrderType
 }
 
 func (oi OrderInfo) isEmpty() bool {
@@ -639,25 +654,49 @@ func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderStatusRequest
 	order, exists := ba.activeOrders[params.OrderId]
 
 	if exists && time.Since(order.LastUpdated) <= ba.getOrderStatusCacheDuration() {
-		return OrderStatusResponse{OrderStatus: order.Status, RemainingQty: order.RemainingQty}, nil
+		return OrderStatusResponse{
+			Symbol:       order.Symbol,
+			OrderId:      params.OrderId,
+			Status:       order.Status,
+			Side:         order.Side,
+			Price:        order.Price,
+			Type:         order.Type,
+			RemainingQty: order.RemainingQty,
+			Qty:          order.Qty,
+			UpdatedAt:    order.UpdatedAt,
+			CreatedAt:    order.CreatedAt,
+		}, nil
 	}
 
 	orderFromApi, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
-		return OrderStatusResponse{OrderStatus: model.OrderInvalid, RemainingQty: -1}, err
-	}
-	remainingQty, err := strconv.ParseFloat(orderFromApi.LeavesQty, 64)
-	if err != nil {
-		remainingQty = 0.0 // default to 0 if not parsable
+		return OrderStatusResponse{Status: model.OrderInvalid}, err
 	}
 
 	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+		Symbol:       orderFromApi.Symbol,
 		Status:       orderFromApi.Status,
-		RemainingQty: remainingQty,
+		RemainingQty: orderFromApi.LeavesQty,
+		CreatedAt:    orderFromApi.CreatedAt,
+		UpdatedAt:    orderFromApi.UpdatedAt,
+		Price:        orderFromApi.Price,
+		Type:         orderFromApi.Type,
+		Side:         orderFromApi.Side,
 		LastUpdated:  time.Now(),
 	}
 
-	return OrderStatusResponse{OrderStatus: orderFromApi.Status, RemainingQty: remainingQty}, nil
+	return OrderStatusResponse{
+		Symbol:       orderFromApi.Symbol,
+		OrderId:      orderFromApi.OrderId,
+		Price:        orderFromApi.Price,
+		Type:         orderFromApi.Type,
+		Status:       orderFromApi.Status,
+		Side:         orderFromApi.Side,
+		CreatedAt:    orderFromApi.CreatedAt,
+		UpdatedAt:    orderFromApi.UpdatedAt,
+		RemainingQty: orderFromApi.LeavesQty,
+		Qty:          orderFromApi.Qty,
+	}, nil
 
 }
 
@@ -757,9 +796,7 @@ func (ba *Adapter) monitorActiveOrders(pollInterval time.Duration) {
 					continue // no update yet, wait for next tick
 				}
 
-				if state.Status == model.OrderFilled ||
-					state.Status == model.OrderCanceled ||
-					state.Status == model.OrderPartiallyFilledCancelled {
+				if state.Status.IsFinished() {
 					delete(ba.activeOrdersToFollow, orderId)
 					log.Printf("Order %s reached final state (%s), removed from watch list\n", orderId, state.Status)
 				}
@@ -853,63 +890,28 @@ func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 	}
 
 	for _, order := range orders {
-		var orderState ActiveOrderTracker
+		orderStatus, ok := parseOrderStatus(order.Status)
 
-		orderStatus, ok := parseOrderStatus(order.OrderStatus)
-
-		if !ok {
-			return fmt.Errorf("bybit - Unhandled Order Status. Status: %s", order.OrderStatus)
+		orderState := ActiveOrderTracker{
+			Status:       orderStatus,
+			Symbol:       order.Symbol,
+			Price:        order.AvgPrice,
+			Side:         model.ParseOrderSide(order.Side),
+			CreatedAt:    millisecondsToTime(order.CreatedTime),
+			UpdatedAt:    millisecondsToTime(order.UpdatedTime),
+			Type:         model.ParseOrderType(order.Type),
+			Qty:          order.Qty,
+			RemainingQty: order.LeavesQty,
+			LastUpdated:  time.Now(),
 		}
 
-		if orderStatus == model.OrderPartiallyFilled {
-			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
-			if err != nil {
-				remainingQty = 0.0
-				log.Printf("bybit - error parsing remaining quantity. Err: %v\n", err)
-			}
-			orderState = ActiveOrderTracker{
-				Status:       model.OrderPartiallyFilled,
-				RemainingQty: remainingQty,
-				LastUpdated:  time.Now(),
-			}
-		} else {
-			orderState = ActiveOrderTracker{Status: orderStatus, LastUpdated: time.Now()}
+		if !ok {
+			return fmt.Errorf("bybit - Unhandled Order Status. Status: %s", order.Status)
 		}
 
 		ba.activeOrders[order.OrderID] = orderState
 	}
 	return nil
-}
-
-func (ba *Adapter) GetRemainingQtyForPartialOrder(
-	ctx context.Context,
-	params OrderStatusRequestParams,
-) (float64, error) {
-	if order, exists := ba.activeOrders[params.OrderId]; exists {
-		return order.RemainingQty, nil // If it exists locally, return it directly.
-	}
-
-	openOrderInfo, err := ba.getOrderWithApi(ctx, params)
-	if err != nil {
-		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
-	}
-
-	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
-	if err != nil {
-		return 0.0, fmt.Errorf(
-			"error parsing remaining quantity for order ID %s: %v",
-			params.OrderId,
-			err,
-		)
-	}
-
-	//add to existing local map before return
-	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-		Status:       openOrderInfo.Status,
-		RemainingQty: remainingQty,
-		LastUpdated:  time.Now(),
-	}
-	return remainingQty, nil
 }
 
 // getOrderWithApi fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
@@ -984,11 +986,11 @@ func (ba *Adapter) parseOrderResponse(
 
 	for _, entry := range orderInfoResult.List {
 		if entry.OrderId == params.OrderId || entry.Symbol == params.Symbol {
-			orderStatus, ok := parseOrderStatus(entry.OrderStatus)
+			orderStatus, ok := parseOrderStatus(entry.Status)
 			if !ok {
 				return OrderInfo{}, fmt.Errorf(
 					"bybit - get_open_order - Cannot parse unknown order status. Status: %s",
-					entry.OrderStatus,
+					entry.Status,
 				)
 			}
 
@@ -999,6 +1001,10 @@ func (ba *Adapter) parseOrderResponse(
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
 				Status:    orderStatus,
+				Side:      model.ParseOrderSide(entry.Side),
+				CreatedAt: millisecondsToTime(entry.CreatedTime),
+				UpdatedAt: millisecondsToTime(entry.UpdatedTime),
+				Type:      model.ParseOrderType(entry.Type),
 			}, nil
 		}
 	}
@@ -1140,4 +1146,9 @@ func reverse(numbers []float64) {
 	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
 		numbers[i], numbers[j] = numbers[j], numbers[i]
 	}
+}
+
+// millisecondsToTime convert a timestamp in milliseconds into a Time object
+func millisecondsToTime(ms int) time.Time {
+	return time.Unix(0, int64(ms)*int64(time.Millisecond))
 }

@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"errors"
+	"time"
 
 	"github.com/nihadazimli/crypbot/internal/model"
 )
@@ -113,8 +114,16 @@ type OrderStatusRequestParams struct {
 }
 
 type OrderStatusResponse struct {
-	OrderStatus  model.OrderStatus
+	OrderId      string
+	Symbol       string
+	Status       model.OrderStatus
+	Type         model.OrderType
+	Side         model.OrderSide
+	Price        float64
+	Qty          float64
 	RemainingQty float64
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
 }
 
 var (
