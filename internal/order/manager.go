@@ -48,7 +48,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Order, erro
 }
 
 func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, error) {
-	order, err := m.Get(ctx, params.OrderID)
+	order, err := m.GetById(ctx, params.OrderID)
 
 	if err != nil {
 		return nil, &Error{
@@ -90,7 +90,7 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 				Err:     fmt.Errorf("quantity is below minimum allowed: %w", err),
 			}
 		case errors.Is(err, exchange.AmendErrOrderDoesNotExist):
-			updateOrder, statusErr := m.Get(ctx, params.OrderID)
+			updateOrder, statusErr := m.GetById(ctx, params.OrderID)
 			if statusErr != nil {
 				return nil, &Error{
 					OrderID: params.OrderID,
@@ -111,27 +111,34 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 			}
 		}
 	}
-	updatedOrder := *order
 
-	if params.Price != nil {
-		updatedOrder.Price = *params.Price
+	//updatedOrder := *order
+	//
+	//if params.Price != nil {
+	//	updatedOrder.Price = *params.Price
+	//}
+	//
+	//if params.Quantity != nil {
+	//	updatedOrder.Quantity = *params.Quantity
+	//}
+	//
+	//if params.StopLoss != nil {
+	//	updatedOrder.StopLoss = params.StopLoss
+	//}
+	//
+	//updatedOrder.UpdatedAt = time.Now()
+	//
+	//return &updatedOrder, nil
+
+	updatedOrder, err := m.GetById(ctx, params.OrderID)
+	if err != nil {
+		return nil, err
 	}
-
-	if params.Quantity != nil {
-		updatedOrder.Quantity = *params.Quantity
-	}
-
-	if params.StopLoss != nil {
-		updatedOrder.StopLoss = params.StopLoss
-	}
-
-	updatedOrder.UpdatedAt = time.Now()
-
-	return &updatedOrder, nil
+	return updatedOrder, nil
 }
 
 func (m *Manager) Cancel(ctx context.Context, orderID string) error {
-	order, err := m.Get(ctx, orderID)
+	order, err := m.GetById(ctx, orderID)
 	if err != nil {
 		return &Error{
 			OrderID: orderID,
@@ -164,7 +171,7 @@ func (m *Manager) Cancel(ctx context.Context, orderID string) error {
 
 	return nil
 }
-func (m *Manager) Get(ctx context.Context, orderID string) (*Order, error) {
+func (m *Manager) GetById(ctx context.Context, orderID string) (*Order, error) {
 	params := exchange.OrderStatusRequestParams{
 		OrderId: orderID,
 	}
@@ -197,8 +204,11 @@ func (m *Manager) createBuyOrder(ctx context.Context, params CreateParams) (*Ord
 	buyParams := exchange.BuyOrderRequestParams{
 		Symbol:      params.Symbol,
 		OrderAmount: params.Quantity,
-		StopLimit:   *params.StopLoss,
 		OrderType:   params.Type,
+	}
+
+	if params.StopLoss != nil {
+		buyParams.StopLimit = *params.StopLoss
 	}
 
 	if params.Type == model.OrderTypeLimit {
@@ -217,6 +227,7 @@ func (m *Manager) createBuyOrder(ctx context.Context, params CreateParams) (*Ord
 		Type:      params.Type,
 		Status:    model.OrderOpen,
 		Quantity:  order.Details.OrderAmount,
+		Price:     order.Details.OrderPrice,
 		StopLoss:  params.StopLoss,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),

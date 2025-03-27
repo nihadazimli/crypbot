@@ -290,6 +290,8 @@ func (ba *Adapter) PlaceBuyOrder(
 		Details: BuyOrderResultDetails{
 			OrderId:     buyDetails.OrderId,
 			OrderLinkId: buyDetails.OrderLinkId,
+			OrderAmount: buyDetails.OrderAmount,
+			OrderPrice:  buyDetails.OrderPrice,
 		},
 	}, nil
 }
@@ -448,6 +450,7 @@ func (ba *Adapter) PlaceSellOrder(
 		Details: SellOrderResultDetails{
 			OrderId:     sellDetails.OrderId,
 			OrderLinkId: sellDetails.OrderLinkId,
+			OrderAmount: sellDetails.OrderAmount,
 		},
 	}, nil
 }
@@ -587,6 +590,12 @@ func (ba *Adapter) AmendOrder(
 			"error unmarshalling result to AmendOrderResultDetails: %s",
 			err,
 		)
+	}
+	delete(ba.activeOrders, params.OrderId)
+
+	err = ba.followOrder(ctx, details.OrderId)
+	if err != nil {
+		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 	}
 	return details, nil
 }
@@ -895,7 +904,7 @@ func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 		orderState := ActiveOrderTracker{
 			Status:       orderStatus,
 			Symbol:       order.Symbol,
-			Price:        order.AvgPrice,
+			Price:        order.Price,
 			Side:         model.ParseOrderSide(order.Side),
 			CreatedAt:    millisecondsToTime(order.CreatedTime),
 			UpdatedAt:    millisecondsToTime(order.UpdatedTime),
