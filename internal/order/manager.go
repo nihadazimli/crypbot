@@ -77,6 +77,12 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 	_, err = m.exchange.AmendOrder(ctx, amendParams)
 	if err != nil {
 		switch {
+		case errors.Is(err, exchange.AmendErrInsufficientBalance):
+			return order, &Error{
+				OrderID: params.OrderID,
+				Type:    ErrOrderInsufficientBalance,
+				Err:     err,
+			}
 		case errors.Is(err, exchange.AmendErrUnchangedParams):
 			return order, &Error{
 				OrderID: params.OrderID,
@@ -226,11 +232,15 @@ func (m *Manager) createBuyOrder(ctx context.Context, params CreateParams) (*Ord
 		Side:      model.OrderSideBuy,
 		Type:      params.Type,
 		Status:    model.OrderOpen,
-		Quantity:  order.Details.OrderAmount,
-		Price:     order.Details.OrderPrice,
+		Quantity:  params.Quantity,
 		StopLoss:  params.StopLoss,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+
+	if params.Type == model.OrderTypeLimit {
+		result.Price = *params.Price
+		result.RemainingQty = params.Quantity
 	}
 
 	return &result, nil
@@ -266,6 +276,10 @@ func (m *Manager) createSellOrder(ctx context.Context, params CreateParams) (*Or
 		StopLoss:  nil,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+
+	if params.Type == model.OrderTypeLimit {
+		orderResult.Price = *params.Price
 	}
 
 	return &orderResult, nil

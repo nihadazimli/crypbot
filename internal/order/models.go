@@ -42,12 +42,13 @@ type Order struct {
 type ErrorType string
 
 const (
-	ErrOrderNotFound        ErrorType = "OrderNotFound"
-	ErrOrderNotModifiable   ErrorType = "OrderNotModifiable"
-	ErrOrderNotCancelable   ErrorType = "OrderNotCancelable"
-	ErrOrderUnchangedParams ErrorType = "OrderUnchangedParams"
-	ErrInvalidParams        ErrorType = "InvalidParams"
-	ErrUnexpected           ErrorType = "UnexpectedError"
+	ErrOrderNotFound            ErrorType = "OrderNotFound"
+	ErrOrderNotModifiable       ErrorType = "OrderNotModifiable"
+	ErrOrderInsufficientBalance ErrorType = "OrderInsufficientBalance"
+	ErrOrderNotCancelable       ErrorType = "OrderNotCancelable"
+	ErrOrderUnchangedParams     ErrorType = "OrderUnchangedParams"
+	ErrInvalidParams            ErrorType = "InvalidParams"
+	ErrUnexpected               ErrorType = "UnexpectedError"
 )
 
 type Error struct {

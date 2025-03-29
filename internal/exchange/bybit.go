@@ -119,6 +119,7 @@ var orderStatusMap = map[string]model.OrderStatus{
 
 const (
 	AmendOrderErrCodeQuantityTooLow      = 170136
+	AmendOrderErrCodeInsufficientBalance = 170131
 	AmendOrderErrCodeUnchangedParameters = 10001
 	AmendOrderErrOrderDoesNotExist       = 170213
 	AmendOrderSuccess                    = 0
@@ -290,8 +291,6 @@ func (ba *Adapter) PlaceBuyOrder(
 		Details: BuyOrderResultDetails{
 			OrderId:     buyDetails.OrderId,
 			OrderLinkId: buyDetails.OrderLinkId,
-			OrderAmount: buyDetails.OrderAmount,
-			OrderPrice:  buyDetails.OrderPrice,
 		},
 	}, nil
 }
@@ -450,7 +449,6 @@ func (ba *Adapter) PlaceSellOrder(
 		Details: SellOrderResultDetails{
 			OrderId:     sellDetails.OrderId,
 			OrderLinkId: sellDetails.OrderLinkId,
-			OrderAmount: sellDetails.OrderAmount,
 		},
 	}, nil
 }
@@ -562,7 +560,9 @@ func (ba *Adapter) AmendOrder(
 	} else if response.RetCode == AmendOrderErrCodeUnchangedParameters {
 		return AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", AmendErrUnchangedParams, params)
 	} else if response.RetCode == AmendOrderErrOrderDoesNotExist {
-		return AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", AmendErrOrderDoesNotExist, params)
+		return AmendOrderResult{}, fmt.Errorf("err: %w, params: %v", AmendErrOrderDoesNotExist, params)
+	} else if response.RetCode == AmendOrderErrCodeInsufficientBalance {
+		return AmendOrderResult{}, fmt.Errorf("err: %w, params: %v", AmendErrInsufficientBalance, params)
 	} else if response.RetCode != AmendOrderSuccess {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {

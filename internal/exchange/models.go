@@ -41,8 +41,6 @@ type KlineStreamRequestParams struct {
 type BuyOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
-	OrderAmount float64
-	OrderPrice  float64
 }
 
 type BuyOrderRequestParams struct {
@@ -61,7 +59,6 @@ type SellOrderResult struct {
 type SellOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
-	OrderAmount float64
 }
 
 type SellOrderRequestParams struct {
@@ -127,7 +124,8 @@ type OrderStatusResponse struct {
 }
 
 var (
-	AmendErrQuantityTooLow    = errors.New("quantity below minimum required")
-	AmendErrUnchangedParams   = errors.New("unchanged parameters for amend")
-	AmendErrOrderDoesNotExist = errors.New("order does not exist")
+	AmendErrQuantityTooLow      = errors.New("quantity below minimum required")
+	AmendErrUnchangedParams     = errors.New("unchanged parameters for amend")
+	AmendErrOrderDoesNotExist   = errors.New("order does not exist")
+	AmendErrInsufficientBalance = errors.New("insufficient balance")
 )
