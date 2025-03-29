@@ -209,14 +209,19 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 									"Monitor buy order - Order cannot be found. Weird! Order Id: %s,Error order id: %s err: %v\n",
 									createdOrder.ID,
 									oerr.OrderID,
-									oerr.Err)
+									oerr.Err,
+								)
 								gracefulErr := tc.gracefullyFinishOrder(ctx, symbol, false)
 								if gracefulErr != nil {
 									return fmt.Errorf("monitor buy order - %v", err)
 								}
 								return err
 							default:
-								return fmt.Errorf("monitor buy order - Cannot Amend Order id %v. Unhandled err: %v", updatedOrder.ID, err)
+								return fmt.Errorf(
+									"monitor buy order - Cannot Amend Order id %v. Unhandled err: %v",
+									updatedOrder.ID,
+									err,
+								)
 							}
 						} else {
 							return fmt.Errorf("error does not match order error. Err: %e", err)
