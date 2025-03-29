@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"errors"
+	"time"
 
 	"github.com/nihadazimli/crypbot/internal/model"
 )
@@ -40,14 +41,14 @@ type KlineStreamRequestParams struct {
 type BuyOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
-	OrderAmount float64
 }
 
 type BuyOrderRequestParams struct {
 	Symbol      string
-	LimitPrice  float64
+	LimitPrice  *float64
 	OrderAmount float64
 	StopLimit   float64
+	OrderType   model.OrderType
 }
 
 type SellOrderResult struct {
@@ -58,13 +59,13 @@ type SellOrderResult struct {
 type SellOrderResultDetails struct {
 	OrderId     string
 	OrderLinkId string
-	OrderAmount float64
 }
 
 type SellOrderRequestParams struct {
 	Symbol      string
-	LimitPrice  float64
+	LimitPrice  *float64
 	OrderAmount float64
+	OrderType   model.OrderType
 }
 
 type OrderBookRequestParams struct {
@@ -104,29 +105,27 @@ type AmendOrderResult struct {
 	OrderId     string
 }
 
-type OrderStatus int
-
-const (
-	Invalid OrderStatus = iota
-	Filled
-	PartiallyFilled
-	Canceled
-	Open
-	PartiallyFilledCancelled
-)
-
-type ActiveOrderTracker struct {
-	Status       OrderStatus
-	RemainingQty float64
-}
-
-type OrderRequestParams struct {
+type OrderStatusRequestParams struct {
 	OrderId string
 	Symbol  string
 }
 
+type OrderStatusResponse struct {
+	OrderId      string
+	Symbol       string
+	Status       model.OrderStatus
+	Type         model.OrderType
+	Side         model.OrderSide
+	Price        float64
+	Qty          float64
+	RemainingQty float64
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
+}
+
 var (
-	AmendErrQuantityTooLow    = errors.New("quantity below minimum required")
-	AmendErrUnchangedParams   = errors.New("unchanged parameters for amend")
-	AmendErrOrderDoesNotExist = errors.New("order does not exist")
+	AmendErrQuantityTooLow      = errors.New("quantity below minimum required")
+	AmendErrUnchangedParams     = errors.New("unchanged parameters for amend")
+	AmendErrOrderDoesNotExist   = errors.New("order does not exist")
+	AmendErrInsufficientBalance = errors.New("insufficient balance")
 )

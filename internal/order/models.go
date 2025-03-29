@@ -1,12 +1,17 @@
 package order
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/nihadazimli/crypbot/internal/model"
+)
 
 type CreateParams struct {
 	Symbol   string
-	Side     Side
-	Type     Type
-	Price    float64
+	Side     model.OrderSide
+	Type     model.OrderType
+	Price    *float64
 	Quantity float64
 	StopLoss *float64
 }
@@ -20,37 +25,42 @@ type UpdateParams struct {
 }
 
 type Order struct {
-	ID        string
-	Symbol    string
-	Side      Side // Buy/Sell
-	Type      Type // Market/Limit
-	Status    Status
-	Price     float64
-	Quantity  float64
-	StopLoss  *float64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           string
+	Symbol       string
+	Side         model.OrderSide // Buy/Sell
+	Type         model.OrderType // Market/Limit
+	Status       model.OrderStatus
+	Price        float64
+	Quantity     float64
+	FilledQty    float64
+	RemainingQty float64
+	StopLoss     *float64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
-type Side string
+type ErrorType string
 
 const (
-	SideBuy  Side = "Buy"
-	SideSell Side = "Sell"
+	ErrOrderNotFound            ErrorType = "OrderNotFound"
+	ErrOrderNotModifiable       ErrorType = "OrderNotModifiable"
+	ErrOrderInsufficientBalance ErrorType = "OrderInsufficientBalance"
+	ErrOrderNotCancelable       ErrorType = "OrderNotCancelable"
+	ErrOrderUnchangedParams     ErrorType = "OrderUnchangedParams"
+	ErrInvalidParams            ErrorType = "InvalidParams"
+	ErrUnexpected               ErrorType = "UnexpectedError"
 )
 
-type Type string
+type Error struct {
+	OrderID string
+	Type    ErrorType
+	Err     error
+}
 
-const (
-	TypeMarket Type = "Market"
-	TypeLimit  Type = "Limit"
-)
+func (e *Error) Error() string {
+	return fmt.Sprintf("Order Error [%s] %s: %v", e.OrderID, e.Type, e.Err)
+}
 
-type Status string
-
-const (
-	StatusOpen            Status = "Open"
-	StatusFilled          Status = "Filled"
-	StatusCanceled        Status = "Canceled"
-	StatusPartiallyFilled Status = "PartiallyFilled"
-)
+func (e *Error) Unwrap() error {
+	return e.Err
+}

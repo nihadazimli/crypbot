@@ -15,13 +15,6 @@ type Exchange interface {
 	CancelAllTPSLOrders(ctx context.Context, symbol string) error
 	StartKlineStream(ctx context.Context, params KlineStreamRequestParams) error
 	GetSymbolBalance(ctx context.Context, symbol string) (SymbolBalanceResult, error)
-
-	GetOrderStatus(ctx context.Context, params OrderRequestParams) (OrderStatus, error)
-	GetRemainingQtyForPartialOrder(
-		ctx context.Context,
-		params OrderRequestParams,
-	) (float64, error)
+	GetOrderStatus(ctx context.Context, params OrderStatusRequestParams) (OrderStatusResponse, error)
 	GetKlineHistory(ctx context.Context, params KlineHistoryParams) (KlineHistoryResult, error)
-	StartOrderStream() error
-	StopOrderStream() error
 }

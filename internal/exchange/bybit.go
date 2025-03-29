@@ -23,12 +23,16 @@ import (
 
 type OrderInfoResult struct {
 	List []struct {
-		OrderId     string `json:"orderId"`
-		Price       string `json:"price"`
-		Qty         string `json:"qty"`
-		LeavesQty   string `json:"leavesQty"`
-		Symbol      string `json:"symbol"`
-		OrderStatus string `json:"orderStatus"`
+		OrderId     string  `json:"orderId"`
+		Price       float64 `json:"price,string"`
+		Qty         float64 `json:"qty,string"`
+		LeavesQty   float64 `json:"leavesQty,string"`
+		Symbol      string  `json:"symbol"`
+		Status      string  `json:"orderStatus"`
+		Side        string  `json:"side"`
+		CreatedTime int     `json:"createdTime,string"`
+		UpdatedTime int     `json:"updatedTime,string"`
+		Type        string  `json:"orderType"`
 	}
 }
 type OrderSource int
@@ -38,13 +42,30 @@ const (
 	OrderSourceHistory
 )
 
+type ActiveOrderTracker struct {
+	Status       model.OrderStatus
+	Symbol       string
+	Price        float64
+	Type         model.OrderType
+	RemainingQty float64
+	Qty          float64
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
+	Side         model.OrderSide
+	LastUpdated  time.Time // Last time order tracker received data
+}
+
 type OrderInfo struct {
 	OrderId   string
-	Price     string
-	Qty       string
-	LeavesQty string
+	Price     float64
+	Qty       float64
+	LeavesQty float64
 	Symbol    string
-	Status    OrderStatus
+	Status    model.OrderStatus
+	Side      model.OrderSide
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Type      model.OrderType
 }
 
 func (oi OrderInfo) isEmpty() bool {
@@ -84,20 +105,21 @@ type OrderBookResponse struct {
 	UpdateID  int64            `json:"u"`
 }
 
-var orderStatusMap = map[string]OrderStatus{
-	"Filled":                  Filled,
-	"Cancelled":               Canceled,
-	"Rejected":                Canceled,
-	"PartiallyFilled":         PartiallyFilled,
-	"Untriggered":             Open,
-	"New":                     Open,
-	"Triggered":               Open,
-	"Deactivated":             Canceled,
-	"PartiallyFilledCanceled": PartiallyFilledCancelled,
+var orderStatusMap = map[string]model.OrderStatus{
+	"Filled":                  model.OrderFilled,
+	"Cancelled":               model.OrderCanceled,
+	"Rejected":                model.OrderCanceled,
+	"PartiallyFilled":         model.OrderPartiallyFilled,
+	"Untriggered":             model.OrderOpen,
+	"New":                     model.OrderOpen,
+	"Triggered":               model.OrderOpen,
+	"Deactivated":             model.OrderCanceled,
+	"PartiallyFilledCanceled": model.OrderPartiallyFilledCancelled,
 }
 
 const (
 	AmendOrderErrCodeQuantityTooLow      = 170136
+	AmendOrderErrCodeInsufficientBalance = 170131
 	AmendOrderErrCodeUnchangedParameters = 10001
 	AmendOrderErrOrderDoesNotExist       = 170213
 	AmendOrderSuccess                    = 0
@@ -108,13 +130,14 @@ type Adapter struct {
 	cfg                   *config.Config
 	orderWebsocket        *websocket.WebSocketClient
 	activeOrders          map[string]ActiveOrderTracker
+	activeOrdersToFollow  map[string]struct{} // These are the orders that are state followed through order websocket
 	klineWriteChan        chan model.WSInternalKline
 	precision             map[string]model.Precision
 	precisionMutex        sync.RWMutex
 	orderStreamSubscribed bool
 }
 
-func NewBybitAdapter(ctx context.Context) *Adapter {
+func NewBybitAdapter() *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
 		BybitClient: bybit.NewBybitHttpClient(
@@ -122,18 +145,19 @@ func NewBybitAdapter(ctx context.Context) *Adapter {
 			cfg.Exchange.API.Secret,
 			bybit.WithBaseURL(cfg.Exchange.API.Host),
 		),
-		cfg:          cfg,
-		precision:    make(map[string]model.Precision),
-		activeOrders: make(map[string]ActiveOrderTracker),
+		cfg:                  cfg,
+		precision:            make(map[string]model.Precision),
+		activeOrders:         make(map[string]ActiveOrderTracker),
+		activeOrdersToFollow: make(map[string]struct{}),
 	}
 	ba.orderWebsocket = websocket.NewWebSocketClientPrivate(
-		ctx,
 		ba.cfg.Exchange.WebSocket.AddressPrivate,
 		ba.cfg.Exchange.API.Key,
 		ba.cfg.Exchange.API.Secret,
 		ba.cfg.Exchange.WebSocket.PingInterval,
 		ba.handlePrivateWSMessages,
 	)
+	ba.monitorActiveOrders(time.Duration(cfg.Exchange.WebSocket.MonitorInterval) * time.Second)
 	return ba
 }
 
@@ -183,6 +207,7 @@ func (ba *Adapter) PlaceBuyOrder(
 	ctx context.Context,
 	params BuyOrderRequestParams,
 ) (BuyOrderResult, error) {
+
 	precision, err := ba.getPrecision(ctx, params.Symbol)
 	if err != nil {
 		return BuyOrderResult{}, fmt.Errorf(
@@ -192,19 +217,31 @@ func (ba *Adapter) PlaceBuyOrder(
 	}
 
 	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
-	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
 	stopLossPrice := numutils.RoundDownToPrecision(params.StopLimit, precision.Price)
 
 	requestParams := map[string]interface{}{
 		"category":    "spot",
 		"symbol":      params.Symbol,
 		"side":        "Buy",
-		"orderType":   "Limit",
 		"qty":         strconv.FormatFloat(qty, 'f', -1, 64),
-		"price":       strconv.FormatFloat(limitPrice, 'f', -1, 64),
 		"stopLoss":    strconv.FormatFloat(stopLossPrice, 'f', -1, 64),
 		"slOrderType": "Market",
 	}
+
+	switch params.OrderType {
+	case model.OrderTypeLimit:
+		if params.LimitPrice == nil {
+			return BuyOrderResult{}, fmt.Errorf("limit price is required for limit orders")
+		}
+		limitPrice := numutils.RoundDownToPrecision(*params.LimitPrice, precision.Price)
+		requestParams["orderType"] = "Limit"
+		requestParams["price"] = strconv.FormatFloat(limitPrice, 'f', -1, 64)
+	case model.OrderTypeMarket:
+		requestParams["orderType"] = "Market"
+	default:
+		return BuyOrderResult{}, fmt.Errorf("unsupported order type: %s", params.OrderType)
+	}
+
 	response, err := ba.BybitClient.NewUtaBybitServiceWithParams(requestParams).PlaceOrder(ctx)
 
 	if err != nil {
@@ -239,6 +276,14 @@ func (ba *Adapter) PlaceBuyOrder(
 			"error unmarshalling result to BuyOrderResultDetails: %s",
 			err,
 		)
+	}
+
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.followOrder(ctx, buyDetails.OrderId)
+
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
 	}
 
 	return BuyOrderResult{
@@ -333,16 +378,28 @@ func (ba *Adapter) PlaceSellOrder(
 	}
 
 	qty := numutils.RoundDownToPrecision(params.OrderAmount, precision.Qty)
-	limitPrice := numutils.RoundDownToPrecision(params.LimitPrice, precision.Price)
 
-	log.Printf("params: %v\n", params)
+	// Base request parameters
 	requestParams := map[string]interface{}{
-		"category":  "spot",
-		"symbol":    params.Symbol,
-		"side":      "Sell",
-		"orderType": "Limit",
-		"qty":       strconv.FormatFloat(qty, 'f', -1, 64),
-		"price":     strconv.FormatFloat(limitPrice, 'f', -1, 64),
+		"category": "spot",
+		"symbol":   params.Symbol,
+		"side":     "Sell",
+		"qty":      strconv.FormatFloat(qty, 'f', -1, 64),
+	}
+
+	// Set order type specific parameters
+	switch params.OrderType {
+	case model.OrderTypeLimit:
+		if params.LimitPrice == nil {
+			return SellOrderResult{}, fmt.Errorf("limit price is required for limit orders")
+		}
+		limitPrice := numutils.RoundDownToPrecision(*params.LimitPrice, precision.Price)
+		requestParams["orderType"] = "Limit"
+		requestParams["price"] = strconv.FormatFloat(limitPrice, 'f', -1, 64)
+	case model.OrderTypeMarket:
+		requestParams["orderType"] = "Market"
+	default:
+		return SellOrderResult{}, fmt.Errorf("unsupported order type: %s", params.OrderType)
 	}
 
 	log.Printf("request params: %v\n", requestParams)
@@ -377,11 +434,16 @@ func (ba *Adapter) PlaceSellOrder(
 	err = json.Unmarshal(resultData, &sellDetails)
 	if err != nil {
 		return SellOrderResult{}, fmt.Errorf(
-			"error unmarshalling result to BuyOrderResultDetails: %s",
+			"error unmarshalling result to SellOrderResultDetails: %s",
 			err,
 		)
 	}
-
+	if params.OrderType == model.OrderTypeLimit {
+		err := ba.followOrder(ctx, sellDetails.OrderId)
+		if err != nil {
+			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
+		}
+	}
 	return SellOrderResult{
 		Success: true,
 		Details: SellOrderResultDetails{
@@ -498,7 +560,9 @@ func (ba *Adapter) AmendOrder(
 	} else if response.RetCode == AmendOrderErrCodeUnchangedParameters {
 		return AmendOrderResult{}, fmt.Errorf("err: %w, params:%v", AmendErrUnchangedParams, params)
 	} else if response.RetCode == AmendOrderErrOrderDoesNotExist {
-		return AmendOrderResult{}, fmt.Errorf("error: %w, params: %v", AmendErrOrderDoesNotExist, params)
+		return AmendOrderResult{}, fmt.Errorf("err: %w, params: %v", AmendErrOrderDoesNotExist, params)
+	} else if response.RetCode == AmendOrderErrCodeInsufficientBalance {
+		return AmendOrderResult{}, fmt.Errorf("err: %w, params: %v", AmendErrInsufficientBalance, params)
 	} else if response.RetCode != AmendOrderSuccess {
 		responseJSON, jsonErr := json.Marshal(response)
 		if jsonErr != nil {
@@ -526,6 +590,12 @@ func (ba *Adapter) AmendOrder(
 			"error unmarshalling result to AmendOrderResultDetails: %s",
 			err,
 		)
+	}
+	delete(ba.activeOrders, params.OrderId)
+
+	err = ba.followOrder(ctx, details.OrderId)
+	if err != nil {
+		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 	}
 	return details, nil
 }
@@ -589,17 +659,53 @@ func (ba *Adapter) GetKlineHistory(ctx context.Context, params KlineHistoryParam
 	}, nil
 }
 
-func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderRequestParams) (OrderStatus, error) {
-	if order, exists := ba.activeOrders[params.OrderId]; exists {
-		return order.Status, nil
+func (ba *Adapter) GetOrderStatus(ctx context.Context, params OrderStatusRequestParams) (OrderStatusResponse, error) {
+	order, exists := ba.activeOrders[params.OrderId]
+
+	if exists && time.Since(order.LastUpdated) <= ba.getOrderStatusCacheDuration() {
+		return OrderStatusResponse{
+			Symbol:       order.Symbol,
+			OrderId:      params.OrderId,
+			Status:       order.Status,
+			Side:         order.Side,
+			Price:        order.Price,
+			Type:         order.Type,
+			RemainingQty: order.RemainingQty,
+			Qty:          order.Qty,
+			UpdatedAt:    order.UpdatedAt,
+			CreatedAt:    order.CreatedAt,
+		}, nil
 	}
 
-	order, err := ba.getOrder(ctx, params)
+	orderFromApi, err := ba.getOrderWithApi(ctx, params)
 	if err != nil {
-		return Invalid, err
+		return OrderStatusResponse{Status: model.OrderInvalid}, err
 	}
 
-	return order.Status, nil
+	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
+		Symbol:       orderFromApi.Symbol,
+		Status:       orderFromApi.Status,
+		RemainingQty: orderFromApi.LeavesQty,
+		CreatedAt:    orderFromApi.CreatedAt,
+		UpdatedAt:    orderFromApi.UpdatedAt,
+		Price:        orderFromApi.Price,
+		Type:         orderFromApi.Type,
+		Side:         orderFromApi.Side,
+		LastUpdated:  time.Now(),
+	}
+
+	return OrderStatusResponse{
+		Symbol:       orderFromApi.Symbol,
+		OrderId:      orderFromApi.OrderId,
+		Price:        orderFromApi.Price,
+		Type:         orderFromApi.Type,
+		Status:       orderFromApi.Status,
+		Side:         orderFromApi.Side,
+		CreatedAt:    orderFromApi.CreatedAt,
+		UpdatedAt:    orderFromApi.UpdatedAt,
+		RemainingQty: orderFromApi.LeavesQty,
+		Qty:          orderFromApi.Qty,
+	}, nil
 
 }
 
@@ -645,14 +751,13 @@ func (ba *Adapter) StartKlineStream(
 
 	for _, chunk := range symbolChunks {
 		ws := websocket.NewWebSocketClientPublic(
-			ctx,
 			ba.cfg.Exchange.WebSocket.AddressPublic,
 			ba.cfg.Exchange.WebSocket.PingInterval,
 			ba.handleKlineMessages,
 		)
 		ba.klineWriteChan = params.KlineWriteChan
 
-		err := ws.ConnectAndStart(chunk)
+		err := ws.ConnectAndStart(ctx, chunk)
 		if err != nil {
 			for _, ws := range webSockets {
 				ws.Shutdown()
@@ -688,35 +793,53 @@ func (ba *Adapter) handleKlineMessages(message []byte) error {
 func getSymbolFromKlineTopic(topic string) string {
 	return topic[strings.LastIndex(topic, ".")+1:]
 }
+func (ba *Adapter) monitorActiveOrders(pollInterval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
 
-func (ba *Adapter) StartOrderStream() error {
+		for range ticker.C {
+			for orderId := range ba.activeOrdersToFollow {
+				state, exists := ba.activeOrders[orderId]
+				if !exists {
+					continue // no update yet, wait for next tick
+				}
+
+				if state.Status.IsFinished() {
+					delete(ba.activeOrdersToFollow, orderId)
+					log.Printf("Order %s reached final state (%s), removed from watch list\n", orderId, state.Status)
+				}
+			}
+
+			if len(ba.activeOrdersToFollow) == 0 && ba.orderStreamSubscribed {
+				log.Println("No active orders left. Stopping order stream.")
+				ba.unsubscribeFromOrderStream()
+				ba.orderStreamSubscribed = false
+			}
+		}
+	}()
+}
+
+func (ba *Adapter) followOrder(ctx context.Context, orderId string) error {
 	if !ba.orderStreamSubscribed {
-		err := ba.subscribeToOrderStream()
+		err := ba.subscribeToOrderStream(ctx)
 		if err != nil {
 			return err
 		}
 		ba.orderStreamSubscribed = true
 	}
+
+	ba.activeOrdersToFollow[orderId] = struct{}{}
 	return nil
 }
 
-func (ba *Adapter) StopOrderStream() error {
-	if ba.orderStreamSubscribed {
-		err := ba.unsubscribeFromOrderStream()
-		if err != nil {
-			return err
-		}
-		ba.orderStreamSubscribed = false
-	}
-	return nil
-}
 func (ba *Adapter) unsubscribeFromOrderStream() error {
 	ba.orderWebsocket.Shutdown()
 	return nil
 }
 
-func (ba *Adapter) subscribeToOrderStream() error {
-	err := ba.orderWebsocket.ConnectAndStart([]string{"order"})
+func (ba *Adapter) subscribeToOrderStream(ctx context.Context) error {
+	err := ba.orderWebsocket.ConnectAndStart(ctx, []string{"order"})
 	if err != nil {
 		return err
 	}
@@ -733,7 +856,7 @@ func (ba *Adapter) handlePrivateWSMessages(message []byte) error {
 
 	switch privateMessage.Topic {
 	case "order":
-		return ba.handleOrderData(privateMessage.Data)
+		return ba.handleOrderMessage(privateMessage.Data)
 	default:
 		log.Printf(
 			"unhandled topic: %s,Data:%s\n",
@@ -768,7 +891,7 @@ func (ba *Adapter) getPrecision(ctx context.Context, symbol string) (model.Preci
 	return ba.precision[symbol], nil
 }
 
-func (ba *Adapter) handleOrderData(data json.RawMessage) error {
+func (ba *Adapter) handleOrderMessage(data json.RawMessage) error {
 	var orders []model.BybitWSOrderData
 	err := json.Unmarshal(data, &orders)
 	if err != nil {
@@ -776,62 +899,34 @@ func (ba *Adapter) handleOrderData(data json.RawMessage) error {
 	}
 
 	for _, order := range orders {
-		var orderState ActiveOrderTracker
+		orderStatus, ok := parseOrderStatus(order.Status)
 
-		orderStatus, ok := parseOrderStatus(order.OrderStatus)
+		orderState := ActiveOrderTracker{
+			Status:       orderStatus,
+			Symbol:       order.Symbol,
+			Price:        order.Price,
+			Side:         model.ParseOrderSide(order.Side),
+			CreatedAt:    millisecondsToTime(order.CreatedTime),
+			UpdatedAt:    millisecondsToTime(order.UpdatedTime),
+			Type:         model.ParseOrderType(order.Type),
+			Qty:          order.Qty,
+			RemainingQty: order.LeavesQty,
+			LastUpdated:  time.Now(),
+		}
 
 		if !ok {
-			return fmt.Errorf("bybit adapter - Unhandled Order Status. Status: %s", order.OrderStatus)
+			return fmt.Errorf("bybit - Unhandled Order Status. Status: %s", order.Status)
 		}
 
-		if orderStatus == PartiallyFilled {
-			remainingQty, err := strconv.ParseFloat(order.LeavesQty, 64)
-			if err != nil {
-				return fmt.Errorf("bybit adapter - Err: %v", err)
-			}
-			orderState = ActiveOrderTracker{Status: PartiallyFilled, RemainingQty: remainingQty}
-		} else {
-			orderState = ActiveOrderTracker{Status: orderStatus}
-		}
 		ba.activeOrders[order.OrderID] = orderState
 	}
 	return nil
 }
 
-func (ba *Adapter) GetRemainingQtyForPartialOrder(
+// getOrderWithApi fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
+func (ba *Adapter) getOrderWithApi(
 	ctx context.Context,
-	params OrderRequestParams,
-) (float64, error) {
-	if order, exists := ba.activeOrders[params.OrderId]; exists {
-		return order.RemainingQty, nil // If it exists locally, return it directly.
-	}
-
-	openOrderInfo, err := ba.getOrder(ctx, params)
-	if err != nil {
-		return 0.0, fmt.Errorf("failed to get open order for ID %s: %w", params.OrderId, err)
-	}
-
-	remainingQty, err := strconv.ParseFloat(openOrderInfo.LeavesQty, 64)
-	if err != nil {
-		return 0.0, fmt.Errorf(
-			"error parsing remaining quantity for order ID %s: %v",
-			params.OrderId,
-			err,
-		)
-	}
-
-	//add to existing local map before return
-	ba.activeOrders[params.OrderId] = ActiveOrderTracker{
-		Status:       PartiallyFilled,
-		RemainingQty: remainingQty,
-	}
-	return remainingQty, nil
-}
-
-// getOrder fetches order details from /v5/order/realtime or /v5/order/history endpoint of Bybit
-func (ba *Adapter) getOrder(
-	ctx context.Context,
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 ) (OrderInfo, error) {
 	queryParams := map[string]interface{}{
 		"category": "spot",
@@ -843,10 +938,6 @@ func (ba *Adapter) getOrder(
 	if err != nil {
 		return OrderInfo{}, fmt.Errorf("failed to fetch realtime order: %w", err)
 	}
-	if !orderInfo.isEmpty() {
-		return orderInfo, nil
-	}
-
 	if !orderInfo.isEmpty() {
 		return orderInfo, nil
 	}
@@ -866,7 +957,7 @@ func (ba *Adapter) getOrder(
 func (ba *Adapter) fetchOrderFromSource(
 	ctx context.Context,
 	queryParams map[string]interface{},
-	params OrderRequestParams,
+	params OrderStatusRequestParams,
 	source OrderSource,
 ) (OrderInfo, error) {
 	var response *bybit.ServerResponse
@@ -886,7 +977,10 @@ func (ba *Adapter) fetchOrderFromSource(
 	return ba.parseOrderResponse(response, params)
 }
 
-func (ba *Adapter) parseOrderResponse(ordersResponse *bybit.ServerResponse, params OrderRequestParams) (OrderInfo, error) {
+func (ba *Adapter) parseOrderResponse(
+	ordersResponse *bybit.ServerResponse,
+	params OrderStatusRequestParams,
+) (OrderInfo, error) {
 
 	resultData, err := json.Marshal(ordersResponse.Result)
 	if err != nil {
@@ -901,11 +995,11 @@ func (ba *Adapter) parseOrderResponse(ordersResponse *bybit.ServerResponse, para
 
 	for _, entry := range orderInfoResult.List {
 		if entry.OrderId == params.OrderId || entry.Symbol == params.Symbol {
-			orderStatus, ok := parseOrderStatus(entry.OrderStatus)
+			orderStatus, ok := parseOrderStatus(entry.Status)
 			if !ok {
 				return OrderInfo{}, fmt.Errorf(
-					"bybit adapter - get_open_order - Cannot parse unknown order status. Status: %s",
-					entry.OrderStatus,
+					"bybit - get_open_order - Cannot parse unknown order status. Status: %s",
+					entry.Status,
 				)
 			}
 
@@ -916,6 +1010,10 @@ func (ba *Adapter) parseOrderResponse(ordersResponse *bybit.ServerResponse, para
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
 				Status:    orderStatus,
+				Side:      model.ParseOrderSide(entry.Side),
+				CreatedAt: millisecondsToTime(entry.CreatedTime),
+				UpdatedAt: millisecondsToTime(entry.UpdatedTime),
+				Type:      model.ParseOrderType(entry.Type),
 			}, nil
 		}
 	}
@@ -986,6 +1084,10 @@ func (ba *Adapter) createKlineTopics(symbols []string, interval int) []string {
 	return klineTopics
 }
 
+func (ba *Adapter) getOrderStatusCacheDuration() time.Duration {
+	return time.Duration(ba.cfg.Defaults.OrderStatusCacheDuration) * time.Second
+}
+
 func constructKlineTopic(symbol string, klineInterval int) string {
 	return "kline." + strconv.Itoa(klineInterval) + "." + symbol
 }
@@ -1001,7 +1103,7 @@ func removeUSDTSuffix(symbol string) string {
 }
 
 // parseOrderStatus converts api response to OrderStatus map
-func parseOrderStatus(status string) (OrderStatus, bool) {
+func parseOrderStatus(status string) (model.OrderStatus, bool) {
 	enumStatus, ok := orderStatusMap[status]
 	return enumStatus, ok
 }
@@ -1053,4 +1155,9 @@ func reverse(numbers []float64) {
 	for i, j := 0, len(numbers)-1; i < j; i, j = i+1, j-1 {
 		numbers[i], numbers[j] = numbers[j], numbers[i]
 	}
+}
+
+// millisecondsToTime convert a timestamp in milliseconds into a Time object
+func millisecondsToTime(ms int) time.Time {
+	return time.Unix(0, int64(ms)*int64(time.Millisecond))
 }

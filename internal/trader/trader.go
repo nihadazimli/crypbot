@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/nihadazimli/crypbot/internal/model"
+
 	"github.com/nihadazimli/crypbot/internal/order"
 
 	"github.com/nihadazimli/crypbot/config"
@@ -31,31 +33,19 @@ type Trader struct {
 	activeOrders map[string]float64
 	cfg          *config.Config
 	exchange     exchange.Exchange
-	order        order.Manager
+	order        order.OrderManager
 	financial    financial.EngineInterface
-}
-
-// Start prepares and returns a new trader client for use in production.
-func Start(
-	buyReady chan string,
-	sellReady chan string,
-	market exchange.Exchange,
-	financial financial.EngineInterface,
-	order order.Manager,
-) *Trader {
-	cfg := config.GetConfig()
-
-	return NewTrader(buyReady, sellReady, cfg, market, financial, order)
 }
 
 func NewTrader(
 	buyReady chan string,
 	sellReady chan string,
-	cfg *config.Config,
 	market exchange.Exchange,
 	financial financial.EngineInterface,
-	order order.Manager,
+	order order.OrderManager,
 ) *Trader {
+	cfg := config.GetConfig()
+
 	return &Trader{
 		buyReady:     buyReady,
 		sellReady:    sellReady,
@@ -127,19 +117,13 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck boo
 	return nil
 }
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
-	err := tc.exchange.StartOrderStream()
-	if err != nil {
-		return fmt.Errorf("cannot start listening to order stream. Err: %v", err)
-	}
-	defer tc.exchange.StopOrderStream()
-
-	order, err := tc.placeFastBuyOrder(ctx, symbol)
+	fastBuyOrder, err := tc.placeFastBuyOrder(ctx, symbol)
 
 	if err != nil {
 		return fmt.Errorf("cannot place order. %v", err)
 	}
 
-	return tc.monitorBuyOrder(ctx, order, symbol)
+	return tc.monitorBuyOrder(ctx, fastBuyOrder, symbol)
 }
 
 func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.BuyOrderResult, symbol string) error {
@@ -151,11 +135,11 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 		case <-ctx.Done():
 			return fmt.Errorf("monitorBuyOrder - context cancelled while monitoring buy for %s", symbol)
 		case <-ticker.C:
-			orderStatusParams := exchange.OrderRequestParams{
+			orderStatusParams := exchange.OrderStatusRequestParams{
 				OrderId: initialOrder.Details.OrderId,
 				Symbol:  symbol,
 			}
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
+			currOrder, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 			if err != nil {
 				return fmt.Errorf(
 					"monitorBuyOrder - not found initialOrder id %s. Err: %v",
@@ -164,17 +148,17 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 				)
 			}
 
-			switch orderStatus {
-			case exchange.Filled, exchange.PartiallyFilledCancelled:
+			switch currOrder.Status {
+			case model.OrderFilled, model.OrderPartiallyFilledCancelled:
 				log.Printf("Order filled for %s\n", symbol)
 				tc.triggerSell(symbol)
 				return nil
-			case exchange.Open, exchange.PartiallyFilled:
+			case model.OrderOpen, model.OrderPartiallyFilled:
 				condition := tc.checkBuyConditions(symbol)
 
 				switch condition {
 				case BuyConditionMet:
-					orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+					orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
 					if err != nil {
 						log.Printf("Buy details can't be calculated. Err: %s\n", err)
 						continue
@@ -182,7 +166,7 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					params := exchange.AmendOrderRequestParams{
 						Symbol:   symbol,
 						OrderId:  initialOrder.Details.OrderId,
-						Price:    &orderParams.LimitPrice,
+						Price:    orderParams.LimitPrice,
 						Quantity: nil, //TODO: Check if any drawbacks
 						StopLoss: &orderParams.StopLimit,
 					}
@@ -235,14 +219,14 @@ func (tc *Trader) monitorBuyOrder(ctx context.Context, initialOrder exchange.Buy
 					return nil
 				}
 
-			case exchange.Invalid, exchange.Canceled:
+			case model.OrderInvalid, model.OrderCanceled:
 				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
 				}
 				return nil
 			default:
-				log.Printf("Order Status: %v This status is not handled\n", orderStatus)
+				log.Printf("Order Status: %v This status is not handled\n", currOrder)
 				err = tc.gracefullyFinishOrder(ctx, symbol, false)
 				if err != nil {
 					return fmt.Errorf("monitorBuyOrder - %v", err)
@@ -280,7 +264,7 @@ func (tc *Trader) placeFastBuyOrder(
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol)
+	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
 	if err != nil {
 		return exchange.BuyOrderResult{}, fmt.Errorf("Error calculating buy order details: %v\n", err)
 	}
@@ -344,17 +328,7 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 
 func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
-	err := tc.exchange.StartOrderStream()
-	if err != nil {
-		return false
-	}
-	defer func() {
-		err := tc.exchange.StopOrderStream()
-		if err != nil {
-			log.Printf("Order stream cannot be stopped! Err:%v\n", err)
-		}
-	}()
-	order, err := tc.placeFastSellOrder(ctx, symbol)
+	fastSellOrder, err := tc.placeFastSellOrder(ctx, symbol)
 	if err != nil {
 		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
 	}
@@ -366,22 +340,22 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			log.Println("Stopping executing sell order")
 			return false
 		case <-sellTicker.C:
-			orderStatusParams := exchange.OrderRequestParams{
-				OrderId: order.Details.OrderId,
+			orderStatusParams := exchange.OrderStatusRequestParams{
+				OrderId: fastSellOrder.Details.OrderId,
 				Symbol:  symbol,
 			}
-			orderStatus, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
+			currOrder, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
 
 			if err != nil {
 				log.Printf(
 					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
-					order.Details.OrderId,
+					fastSellOrder.Details.OrderId,
 				)
 				continue
 			}
 
-			if orderStatus == exchange.Filled {
+			if currOrder.Status == model.OrderFilled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				return true
 			}
@@ -392,23 +366,13 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 				continue
 			}
 
-			if orderStatus == exchange.PartiallyFilled {
-				params := exchange.OrderRequestParams{OrderId: order.Details.OrderId, Symbol: symbol}
-				remainingQty, err := tc.exchange.GetRemainingQtyForPartialOrder(ctx, params)
-				if err != nil {
-					log.Printf(
-						"Can't get Remaining qty for sell order %s. Error: %v\n",
-						order.Details.OrderId,
-						err,
-					)
-					continue
-				}
-				log.Printf("Remaining qty for %s is %v", symbol, remainingQty)
+			if currOrder.Status == model.OrderPartiallyFilled {
+				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
 			}
 			params := exchange.AmendOrderRequestParams{
 				Symbol:   symbol,
-				OrderId:  order.Details.OrderId,
-				Price:    &orderParams.LimitPrice,
+				OrderId:  fastSellOrder.Details.OrderId,
+				Price:    orderParams.LimitPrice,
 				Quantity: nil, // TODO: Check if any drawbacks
 				StopLoss: nil,
 			}
@@ -425,7 +389,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					}
 					return true
 				} else {
-					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", order.Details.OrderId, err)
+					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", fastSellOrder.Details.OrderId, err)
 					err = tc.gracefullyFinishOrder(ctx, symbol, true)
 					if err != nil {
 						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
@@ -440,62 +404,68 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 
 func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 	if len(tc.activeOrders) > 0 {
-		log.Printf("Already has a position. Active orders: %v", tc.activeOrders)
+		log.Printf("trader - checkBuyConditions - Already has a position. Active orders: %v\n", tc.activeOrders)
 		return BuyConditionCancel
 	}
 	_, exists := tc.activeOrders[symbol]
 	if exists {
-		log.Println("Already has position for given symbol")
+		log.Printf("trader - checkBuyConditions - Already has position for given symbol for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	rsiLive, rsiOk := tc.financial.GetRSILive(symbol)
 	if !rsiOk {
-		log.Println("No RSI data available")
+		log.Printf("trader - checkBuyConditions - No RSI closed data available for %s\n", symbol)
 		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
 		return BuyConditionCancel
 	}
 
 	rsiClosed, rsiOk := tc.financial.GetRSIClosed(symbol)
 	if !rsiOk {
-		log.Println("No RSI data available")
+		log.Printf("trader - checkBuyConditions - No RSI live data available for %s\n", symbol)
 		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
 		return BuyConditionCancel
 	}
 
 	volumeMedian, volumeOk := tc.financial.GetVolumeValueMedian(symbol)
 	if !volumeOk {
-		log.Println("No volume data available")
+		log.Printf("trader - checkBuyConditions - No volume data available for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	movingAverages, err := tc.financial.GetMovingAverages(symbol)
 	if err != nil {
-		log.Printf("Could not retrieve MA - Err: %s\n", err)
+		log.Printf("trader - checkBuyConditions - Could not retrieve MA - Err: %s\n", err)
 		return BuyConditionCancel
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
 		log.Printf(
-			"Moving average short (%.2f) is smaller than moving average long (%.2f)\n",
+			"trader - checkBuyConditions - MA short (%.2f) is smaller than MA long (%.2f) for %s\n",
 			movingAverages.MA50,
 			movingAverages.MA100,
+			symbol,
 		)
 		return BuyConditionCancel
 	}
 
 	if rsiClosed > tc.cfg.Trader.RSIBuyValue {
-		log.Println("RSIClose too big")
+		log.Printf("trader - checkBuyConditions - RSIClose is bigger than threshold for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	if volumeMedian < tc.cfg.Trader.MedianVolumeThreshold {
-		log.Println("Median Volume below threshold")
+		log.Printf("trader - checkBuyConditions - Median Volume below threshold for %s\n", symbol)
 		return BuyConditionCancel
 	}
 
 	if rsiLive > tc.cfg.Trader.RSIBuyValue {
-		log.Printf("RSI live is bigger than Araz's IQ. RSI Live:%.2f Araz's IQ: %v", rsiLive, tc.cfg.Trader.RSIBuyValue)
+		log.Printf(
+			"RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n",
+			tc.cfg.Trader.RSIBuyValue,
+			symbol,
+			rsiLive,
+		)
 		return BuyConditionWait
 	}
 
@@ -538,11 +508,11 @@ func (tc *Trader) CalculateSellOrderDetails(
 			symbol,
 		)
 	}
-	//TODO: When orderAmount is zero check through Exchange as well. Or generate a logic to construct it.
 	return exchange.SellOrderRequestParams{
 		Symbol:      symbol,
 		OrderAmount: coinBalance.WalletBalance,
-		LimitPrice:  limitPrice,
+		LimitPrice:  &limitPrice,
+		OrderType:   model.OrderTypeLimit,
 	}, err
 
 }
@@ -550,11 +520,9 @@ func (tc *Trader) CalculateSellOrderDetails(
 func (tc *Trader) CalculateBuyOrderDetails(
 	ctx context.Context,
 	symbol string,
+	orderType model.OrderType,
 ) (exchange.BuyOrderRequestParams, error) {
-	bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
-	if err != nil {
-		return exchange.BuyOrderRequestParams{}, err
-	}
+
 	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
 	if !ok {
 		return exchange.BuyOrderRequestParams{}, fmt.Errorf(
@@ -575,15 +543,29 @@ func (tc *Trader) CalculateBuyOrderDetails(
 		)
 	}
 
-	var limitPrice float64
-	if bestBidPrice >= currentPrice {
-		limitPrice = bestBidPrice
-	} else {
-		averagePrice := (bestBidPrice + currentPrice) / 2.0
-		limitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
+	var limitPrice *float64
+	var orderAmount float64
+
+	switch orderType {
+	case model.OrderTypeLimit:
+		bestBidPrice, err := tc.getBestBidPrice(ctx, symbol)
+		if err != nil {
+			return exchange.BuyOrderRequestParams{}, err
+		}
+
+		calcLimitPrice := bestBidPrice
+		if bestBidPrice < currentPrice {
+			averagePrice := (bestBidPrice + currentPrice) / 2.0
+			calcLimitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
+		}
+		limitPrice = &calcLimitPrice
+		orderAmount = (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / calcLimitPrice
+
+	case model.OrderTypeMarket:
+		orderAmount = (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / currentPrice
 	}
-	orderAmount := (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / limitPrice
-	stopLimit := tc.cfg.Trader.StopLossRatio * limitPrice
+
+	stopLimit := tc.cfg.Trader.StopLossRatio * currentPrice
 
 	return exchange.BuyOrderRequestParams{
 		Symbol:      symbol,
@@ -640,7 +622,7 @@ func (tc *Trader) getOrderBook(
 
 func (tc *Trader) getBestBidPrice(ctx context.Context, symbol string) (float64, error) {
 
-	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e highest bid)
+	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value that is the highest bid
 	if err != nil {
 		return 0, err
 	}
@@ -650,7 +632,7 @@ func (tc *Trader) getBestBidPrice(ctx context.Context, symbol string) (float64, 
 }
 
 func (tc *Trader) getBestAskPrice(ctx context.Context, symbol string) (float64, error) {
-	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value (i.e. lowest ask)
+	orderBook, err := tc.getOrderBook(ctx, symbol, 1) // we only need top value that is the lowest ask
 	if err != nil {
 		return 0, err
 	}

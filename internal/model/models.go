@@ -3,6 +3,8 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 )
 
 type WSRawKline struct {
@@ -20,13 +22,17 @@ type BybitWSPrivateMessage struct {
 }
 
 type BybitWSOrderData struct {
-	OrderID     string `json:"orderId"`
-	Qty         string `json:"qty"`
-	CumExecQty  string `json:"cumExecQty"`
-	AvgPrice    string `json:"avgPrice"`
-	OrderStatus string `json:"orderStatus"`
-	Symbol      string `json:"symbol"`
-	LeavesQty   string `json:"leavesQty"`
+	OrderID     string  `json:"orderId"`
+	Qty         float64 `json:"qty,string"`
+	CumExecQty  string  `json:"cumExecQty"`
+	Price       float64 `json:"price,string"`
+	Status      string  `json:"orderStatus"`
+	Symbol      string  `json:"symbol"`
+	LeavesQty   float64 `json:"leavesQty,string"`
+	Side        string  `json:"side"`
+	Type        string  `json:"orderType"`
+	CreatedTime int     `json:"createdTime,string"`
+	UpdatedTime int     `json:"updatedTime,string"`
 }
 
 type WSKlineData struct {
@@ -77,4 +83,76 @@ type Precision struct {
 type MovingAverage struct {
 	MA100 float64
 	MA50  float64
+}
+
+type OrderType string
+
+const (
+	OrderTypeMarket  OrderType = "Market"
+	OrderTypeLimit   OrderType = "Limit"
+	OrderTypeUnknown OrderType = "N/A"
+)
+
+func ParseOrderType(orderType string) OrderType {
+	switch strings.ToUpper(orderType) {
+	case "MARKET":
+		return OrderTypeMarket
+	case "LIMIT":
+		return OrderTypeLimit
+	default:
+		return OrderTypeUnknown
+	}
+}
+
+type OrderSide string
+
+const (
+	OrderSideBuy     OrderSide = "Buy"
+	OrderSideSell    OrderSide = "Sell"
+	OrderSideUnknown OrderSide = "N/A"
+)
+
+func ParseOrderSide(side string) OrderSide {
+	switch strings.ToUpper(side) {
+	case "BUY":
+		return OrderSideBuy
+	case "SELL":
+		return OrderSideSell
+	default:
+		return OrderSideUnknown
+	}
+}
+
+type OrderStatus int
+
+const (
+	OrderInvalid OrderStatus = iota
+	OrderFilled
+	OrderPartiallyFilled
+	OrderCanceled
+	OrderOpen
+	OrderPartiallyFilledCancelled
+)
+
+func (o OrderStatus) String() string {
+	names := map[OrderStatus]string{
+		OrderInvalid:                  "Invalid",
+		OrderFilled:                   "Filled",
+		OrderPartiallyFilled:          "PartiallyFilled",
+		OrderCanceled:                 "Canceled",
+		OrderOpen:                     "Open",
+		OrderPartiallyFilledCancelled: "PartiallyFilledCancelled",
+	}
+	if name, ok := names[o]; ok {
+		return name
+	}
+	return fmt.Sprintf("Unknown(%d)", o)
+}
+func (o OrderStatus) IsFinished() bool {
+	switch o {
+	case OrderFilled, OrderCanceled, OrderPartiallyFilledCancelled:
+		return true
+	default:
+		return false
+	}
 }
