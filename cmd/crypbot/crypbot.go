@@ -38,7 +38,7 @@ func main() {
 
 	fe := financial.Start(ctx, bybit, buyReady)
 	orderManager := order.NewOrderManager(bybit)
-	tc := trader.Start(buyReady, sellReady, bybit, fe, orderManager)
+	tc := trader.NewTrader(buyReady, sellReady, bybit, fe, orderManager)
 	go tc.ProcessBuySignal(ctx)
 	go tc.ProcessSellSignal(ctx)
 

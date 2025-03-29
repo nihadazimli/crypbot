@@ -37,8 +37,7 @@ type Trader struct {
 	financial    financial.EngineInterface
 }
 
-// Start prepares and returns a new trader client for use in production.
-func Start(
+func NewTrader(
 	buyReady chan string,
 	sellReady chan string,
 	market exchange.Exchange,
@@ -47,17 +46,6 @@ func Start(
 ) *Trader {
 	cfg := config.GetConfig()
 
-	return NewTrader(buyReady, sellReady, cfg, market, financial, order)
-}
-
-func NewTrader(
-	buyReady chan string,
-	sellReady chan string,
-	cfg *config.Config,
-	market exchange.Exchange,
-	financial financial.EngineInterface,
-	order order.OrderManager,
-) *Trader {
 	return &Trader{
 		buyReady:     buyReady,
 		sellReady:    sellReady,
