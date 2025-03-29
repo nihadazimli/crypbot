@@ -33,7 +33,7 @@ type Trader struct {
 	activeOrders map[string]float64
 	cfg          *config.Config
 	exchange     exchange.Exchange
-	order        order.Manager
+	order        order.OrderManager
 	financial    financial.EngineInterface
 }
 
@@ -43,7 +43,7 @@ func Start(
 	sellReady chan string,
 	market exchange.Exchange,
 	financial financial.EngineInterface,
-	order order.Manager,
+	order order.OrderManager,
 ) *Trader {
 	cfg := config.GetConfig()
 
@@ -56,7 +56,7 @@ func NewTrader(
 	cfg *config.Config,
 	market exchange.Exchange,
 	financial financial.EngineInterface,
-	order order.Manager,
+	order order.OrderManager,
 ) *Trader {
 	return &Trader{
 		buyReady:     buyReady,
