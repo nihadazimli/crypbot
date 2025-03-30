@@ -123,10 +123,9 @@ func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck boo
 	return nil
 }
 func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) error {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	defer cancel()
-
-	createdOrder, err := tc.createLimitOrder(ctxWithTimeout, symbol, model.OrderSideBuy)
+	createCtx, createCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	createdOrder, err := tc.createLimitOrder(createCtx, symbol, model.OrderSideBuy)
+	createCancel()
 
 	if err != nil {
 		return fmt.Errorf("placeBuyOrderAndMonitor - %w", err)
@@ -160,7 +159,10 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 
 				switch condition {
 				case BuyConditionMet:
-					updatedOrder, err := tc.updateLimitOrder(ctxWithTimeout, symbol, createdOrder.ID, model.OrderSideBuy)
+					updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+					updatedOrder, err := tc.updateLimitOrder(updateCtx, symbol, createdOrder.ID, model.OrderSideBuy)
+					updateCancel()
+
 					if err != nil {
 						var oerr *order.Error
 						if errors.As(err, &oerr) {
