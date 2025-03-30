@@ -255,8 +255,7 @@ func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId s
 		updatedBuyDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"updateLimitOrder - buy details can't be calculated. Error message: %s. Err: %w\n",
-				err,
+				"updateLimitOrder - failed to calculate buy details: %w",
 				BuyDetailsErrCannotCalculate,
 			)
 		}
@@ -271,8 +270,7 @@ func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId s
 		updatedSellDetails, err := tc.CalculateSellOrderDetails(ctx, symbol, model.OrderTypeLimit)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"updateLimitOrder - sell details can't be calculated. Error message: %s. Err: %w\n",
-				err,
+				"updateLimitOrder - failed to calculate sell details: %w",
 				SellDetailsErrCannotCalculate,
 			)
 		}
