@@ -126,7 +126,7 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	defer cancel()
 
-	createdOrder, err := tc.createLimitOrder(ctxWithTimeout, symbol)
+	createdOrder, err := tc.createLimitOrder(ctxWithTimeout, symbol, model.OrderSideBuy)
 
 	if err != nil {
 		return fmt.Errorf("placeBuyOrderAndMonitor - %w", err)
@@ -160,7 +160,7 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 
 				switch condition {
 				case BuyConditionMet:
-					updatedOrder, err := tc.updateLimitOrder(ctxWithTimeout, symbol, createdOrder.ID)
+					updatedOrder, err := tc.updateLimitOrder(ctxWithTimeout, symbol, createdOrder.ID, model.OrderSideBuy)
 					if err != nil {
 						var oerr *order.Error
 						if errors.As(err, &oerr) {
@@ -247,23 +247,41 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 	}
 }
 
-func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId string) (*order.Order, error) {
-	updatedOrderDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"updateLimitOrder - buy details can't be calculated. Error message: %s. Err: %w\n",
-			err,
-			BuyDetailsErrCannotCalculate,
-		)
+func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId string, side model.OrderSide) (*order.Order, error) {
+	var updateParams order.UpdateParams
+	if side == model.OrderSideBuy {
+		updatedBuyDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"updateLimitOrder - buy details can't be calculated. Error message: %s. Err: %w\n",
+				err,
+				BuyDetailsErrCannotCalculate,
+			)
+		}
+		updateParams = order.UpdateParams{
+			OrderID:  orderId,
+			Symbol:   symbol,
+			Price:    &updatedBuyDetails.Price,
+			Quantity: &updatedBuyDetails.Quantity,
+			StopLoss: &updatedBuyDetails.StopLoss,
+		}
+	} else if side == model.OrderSideSell {
+		updatedSellDetails, err := tc.CalculateSellOrderDetails(ctx, symbol, model.OrderTypeLimit)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"updateLimitOrder - sell details can't be calculated. Error message: %s. Err: %w\n",
+				err,
+				SellDetailsErrCannotCalculate,
+			)
+		}
+		updateParams = order.UpdateParams{
+			OrderID:  orderId,
+			Symbol:   symbol,
+			Price:    &updatedSellDetails.Price,
+			Quantity: &updatedSellDetails.Quantity,
+		}
 	}
 
-	updateParams := order.UpdateParams{
-		OrderID:  orderId,
-		Symbol:   symbol,
-		Price:    &updatedOrderDetails.Price,
-		Quantity: &updatedOrderDetails.Quantity,
-		StopLoss: &updatedOrderDetails.StopLoss,
-	}
 	updatedOrder, err := tc.order.Update(ctx, updateParams)
 	if err != nil {
 		return nil, fmt.Errorf("updateLimitOrder - %w", err)
@@ -271,18 +289,35 @@ func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId s
 	return updatedOrder, nil
 }
 
-func (tc *Trader) createLimitOrder(ctx context.Context, symbol string) (*order.Order, error) {
-	orderDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
-	if err != nil {
-		return nil, fmt.Errorf("createLimitOrder - Error calculating buy order details: %v\n", err)
-	}
-	createParams := order.CreateParams{
-		Symbol:   symbol,
-		Side:     model.OrderSideBuy,
-		Type:     model.OrderTypeLimit,
-		Price:    &orderDetails.Price,
-		Quantity: orderDetails.Quantity,
-		StopLoss: &orderDetails.StopLoss,
+func (tc *Trader) createLimitOrder(ctx context.Context, symbol string, side model.OrderSide) (*order.Order, error) {
+
+	var createParams order.CreateParams
+	if side == model.OrderSideBuy {
+		orderDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
+		if err != nil {
+			return nil, fmt.Errorf("createLimitOrder - Error calculating buy order details: %v\n", err)
+		}
+		createParams = order.CreateParams{
+			Symbol:   symbol,
+			Side:     model.OrderSideBuy,
+			Type:     model.OrderTypeLimit,
+			Price:    &orderDetails.Price,
+			Quantity: orderDetails.Quantity,
+			StopLoss: &orderDetails.StopLoss,
+		}
+	} else if side == model.OrderSideSell {
+		orderDetails, err := tc.CalculateSellOrderDetails(ctx, symbol, model.OrderTypeLimit)
+		if err != nil {
+			return nil, fmt.Errorf("createLimitOrder - Error calculating sell order details: %v\n", err)
+		}
+		createParams = order.CreateParams{
+			Symbol:   symbol,
+			Side:     model.OrderSideSell,
+			Type:     model.OrderTypeLimit,
+			Price:    &orderDetails.Price,
+			Quantity: orderDetails.Quantity,
+		}
+
 	}
 	createdOrder, err := tc.order.Create(ctx, createParams)
 	if err != nil {
@@ -291,54 +326,6 @@ func (tc *Trader) createLimitOrder(ctx context.Context, symbol string) (*order.O
 
 	return createdOrder, nil
 
-}
-
-func (tc *Trader) placeFastSellOrder(
-	ctx context.Context,
-	symbol string,
-) (exchange.SellOrderResult, error) {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	defer cancel()
-
-	orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
-	if err != nil {
-		log.Printf("Error calculating sell order details: %v\n", err)
-	}
-
-	orderResult, err := tc.exchange.PlaceSellOrder(ctxWithTimeout, orderParams)
-	if err != nil {
-		return orderResult, err
-	}
-	log.Printf("Sell order placed successfully:%v\n", orderResult.Details.OrderId)
-	return orderResult, nil
-}
-
-func (tc *Trader) placeFastBuyOrder(
-	ctx context.Context,
-	symbol string,
-) (*order.Order, error) {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	defer cancel()
-
-	orderParams, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)
-	if err != nil {
-		return nil, fmt.Errorf("Error calculating buy order details: %v\n", err)
-	}
-
-	createParams := order.CreateParams{
-		Symbol:   symbol,
-		Side:     model.OrderSideBuy,
-		Type:     model.OrderTypeLimit,
-		Price:    &orderParams.Price,
-		Quantity: orderParams.Quantity,
-		StopLoss: &orderParams.StopLoss,
-	}
-	orderResult, err := tc.order.Create(ctxWithTimeout, createParams)
-	if err != nil {
-		return orderResult, err
-	}
-	log.Printf("Buy order placed successfully %v. Order Params: %v\n", orderResult.ID, orderParams)
-	return orderResult, nil
 }
 
 func (tc *Trader) ProcessSellSignal(ctx context.Context) {
@@ -391,10 +378,12 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 }
 
 func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
-
-	fastSellOrder, err := tc.placeFastSellOrder(ctx, symbol)
+	orderCtx, orderCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	sellOrder, err := tc.createLimitOrder(orderCtx, symbol, model.OrderSideSell)
+	orderCancel()
 	if err != nil {
 		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
+		return false
 	}
 
 	sellTicker := time.NewTicker(tc.getSellOrderCheckDuration())
@@ -404,65 +393,62 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			log.Println("Stopping executing sell order")
 			return false
 		case <-sellTicker.C:
-			orderStatusParams := exchange.OrderStatusRequestParams{
-				OrderId: fastSellOrder.Details.OrderId,
-				Symbol:  symbol,
-			}
-			currOrder, err := tc.exchange.GetOrderStatus(ctx, orderStatusParams)
+			statusCtx, statusCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+			currOrder, err := tc.order.GetById(statusCtx, sellOrder.ID)
+			statusCancel()
 
 			if err != nil {
 				log.Printf(
 					"Order not found for symbol %s. OrderId: %s\n",
 					symbol,
-					fastSellOrder.Details.OrderId,
+					currOrder.ID,
 				)
-				continue
+				return false
 			}
 
 			if currOrder.Status == model.OrderFilled {
 				log.Printf("Sell order filled for %s\n", symbol)
 				return true
-			}
-
-			orderParams, err := tc.CalculateSellOrderDetails(ctx, symbol)
-			if err != nil {
-				log.Printf("Error calculating sell order details: %v\n", err)
-				continue
-			}
-
-			if currOrder.Status == model.OrderPartiallyFilled {
+			} else if currOrder.Status == model.OrderPartiallyFilled {
 				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
 			}
-			params := exchange.AmendOrderRequestParams{
-				Symbol:   symbol,
-				OrderId:  fastSellOrder.Details.OrderId,
-				Price:    orderParams.LimitPrice,
-				Quantity: nil, // TODO: Check if any drawbacks
-				StopLoss: nil,
-			}
-			_, err = tc.exchange.AmendOrder(ctx, params)
+			updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+			currOrder, err = tc.updateLimitOrder(updateCtx, symbol, currOrder.ID, model.OrderSideSell)
+			updateCancel()
+
 			if err != nil {
-				if errors.Is(err, exchange.AmendErrUnchangedParams) {
-					continue
-				} else if errors.Is(err, exchange.AmendErrOrderDoesNotExist) {
-					log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
-					err = tc.gracefullyFinishOrder(ctx, symbol, true)
-					if err != nil {
-						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+				var oerr *order.Error
+				if errors.As(err, &oerr) {
+					switch oerr.Type {
+					case order.ErrOrderUnchangedParams:
+						continue
+					case order.ErrOrderNotFound:
+						log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
+						err = tc.gracefullyFinishOrder(ctx, symbol, true)
+						if err != nil {
+							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+							return false
+						}
+						return true
+					default:
+						log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", sellOrder.ID, err)
+						err = tc.gracefullyFinishOrder(ctx, symbol, true)
+						if err != nil {
+							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+						}
 						return false
 					}
-					return true
 				} else {
-					log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", fastSellOrder.Details.OrderId, err)
-					err = tc.gracefullyFinishOrder(ctx, symbol, true)
-					if err != nil {
-						log.Printf("Execute sell order - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+					if errors.Is(err, SellDetailsErrCannotCalculate) {
+						log.Printf("executeSellOrder -  %v\n", err)
+						continue
+					} else {
 						return false
 					}
 				}
 			}
-
 		}
+
 	}
 }
 
@@ -539,11 +525,12 @@ func (tc *Trader) checkBuyConditions(symbol string) BuyConditionResult {
 func (tc *Trader) CalculateSellOrderDetails(
 	ctx context.Context,
 	symbol string,
-) (exchange.SellOrderRequestParams, error) {
+	orderType model.OrderType,
+) (OrderDetails, error) {
 	bestAskPrice, err := tc.getBestAskPrice(ctx, symbol)
 	if err != nil {
 		log.Println("Failed to get Best Ask Price for", symbol, " Err:", err)
-		return exchange.SellOrderRequestParams{}, fmt.Errorf(
+		return OrderDetails{}, fmt.Errorf(
 			"failed to get Best Ask Price for %s Err: %v",
 			symbol,
 			err,
@@ -552,32 +539,35 @@ func (tc *Trader) CalculateSellOrderDetails(
 
 	currentPrice, ok := tc.financial.GetCurrentPrice(symbol)
 	if !ok {
-		return exchange.SellOrderRequestParams{}, fmt.Errorf(
+		return OrderDetails{}, fmt.Errorf(
 			"failed to get current price for %s",
 			symbol,
 		)
 	}
 
-	var limitPrice float64
-	if bestAskPrice <= currentPrice {
-		limitPrice = bestAskPrice
-	} else {
-		averagePrice := (bestAskPrice + currentPrice) / 2
-		limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
-	}
 	coinBalance, err := tc.exchange.GetSymbolBalance(ctx, symbol)
 	if err != nil {
-		return exchange.SellOrderRequestParams{}, fmt.Errorf(
+		return OrderDetails{}, fmt.Errorf(
 			"failed to get balance for %s symbol",
 			symbol,
 		)
 	}
-	return exchange.SellOrderRequestParams{
-		Symbol:      symbol,
-		OrderAmount: coinBalance.WalletBalance,
-		LimitPrice:  &limitPrice,
-		OrderType:   model.OrderTypeLimit,
-	}, err
+	orderDetails := OrderDetails{
+		Quantity: coinBalance.WalletBalance,
+	}
+
+	if orderType == model.OrderTypeLimit {
+		var limitPrice float64
+		if bestAskPrice <= currentPrice {
+			limitPrice = bestAskPrice
+		} else {
+			averagePrice := (bestAskPrice + currentPrice) / 2
+			limitPrice = numutils.RoundUpToPrecision(averagePrice, bestAskPrice)
+		}
+		orderDetails.Price = limitPrice
+	}
+
+	return orderDetails, nil
 
 }
 
