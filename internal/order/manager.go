@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nihadazimli/crypbot/internal/model"
-
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/exchange"
+	"github.com/nihadazimli/crypbot/internal/model"
 )
 
 type Manager struct {
