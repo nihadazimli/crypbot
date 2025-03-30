@@ -249,7 +249,12 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 	}
 }
 
-func (tc *Trader) updateLimitOrder(ctx context.Context, symbol string, orderId string, side model.OrderSide) (*order.Order, error) {
+func (tc *Trader) updateLimitOrder(
+	ctx context.Context,
+	symbol string,
+	orderId string,
+	side model.OrderSide,
+) (*order.Order, error) {
 	var updateParams order.UpdateParams
 	if side == model.OrderSideBuy {
 		updatedBuyDetails, err := tc.CalculateBuyOrderDetails(ctx, symbol, model.OrderTypeLimit)

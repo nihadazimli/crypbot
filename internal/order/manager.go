@@ -118,24 +118,6 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 		}
 	}
 
-	//updatedOrder := *order
-	//
-	//if params.Price != nil {
-	//	updatedOrder.Price = *params.Price
-	//}
-	//
-	//if params.Quantity != nil {
-	//	updatedOrder.Quantity = *params.Quantity
-	//}
-	//
-	//if params.StopLoss != nil {
-	//	updatedOrder.StopLoss = params.StopLoss
-	//}
-	//
-	//updatedOrder.UpdatedAt = time.Now()
-	//
-	//return &updatedOrder, nil
-
 	updatedOrder, err := m.GetById(ctx, params.OrderID)
 	if err != nil {
 		return nil, err
