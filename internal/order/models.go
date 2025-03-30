@@ -43,7 +43,7 @@ type ErrorType string
 
 const (
 	ErrOrderNotFound            ErrorType = "OrderNotFound"
-	ErrOrderNotModifiable       ErrorType = "OrderNotModifiable"
+	ErrOrderAtFinalState        ErrorType = "OrderAtFinalState"
 	ErrOrderInsufficientBalance ErrorType = "OrderInsufficientBalance"
 	ErrOrderNotCancelable       ErrorType = "OrderNotCancelable"
 	ErrOrderUnchangedParams     ErrorType = "OrderUnchangedParams"

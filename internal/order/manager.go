@@ -61,7 +61,7 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 	if order.Status.IsFinished() {
 		return nil, &Error{
 			OrderID: params.OrderID,
-			Type:    ErrOrderNotModifiable,
+			Type:    ErrOrderAtFinalState,
 			Err:     fmt.Errorf("order is in final state. Status: %s", order.Status),
 		}
 	}
@@ -106,7 +106,7 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 			}
 			return updateOrder, &Error{
 				OrderID: params.OrderID,
-				Type:    ErrOrderNotModifiable,
+				Type:    ErrOrderAtFinalState,
 				Err:     fmt.Errorf("order status changed during update to %s state", updateOrder.Status),
 			}
 		default:
@@ -117,24 +117,6 @@ func (m *Manager) Update(ctx context.Context, params UpdateParams) (*Order, erro
 			}
 		}
 	}
-
-	//updatedOrder := *order
-	//
-	//if params.Price != nil {
-	//	updatedOrder.Price = *params.Price
-	//}
-	//
-	//if params.Quantity != nil {
-	//	updatedOrder.Quantity = *params.Quantity
-	//}
-	//
-	//if params.StopLoss != nil {
-	//	updatedOrder.StopLoss = params.StopLoss
-	//}
-	//
-	//updatedOrder.UpdatedAt = time.Now()
-	//
-	//return &updatedOrder, nil
 
 	updatedOrder, err := m.GetById(ctx, params.OrderID)
 	if err != nil {
