@@ -173,6 +173,8 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 									"Monitor buy order - order %s with status %s cancelled due to low remaining qty\n",
 									updatedOrder.ID, updatedOrder.Status,
 								)
+								tc.triggerSell(symbol)
+								return nil
 							case order.ErrOrderUnchangedParams:
 								continue
 							case order.ErrOrderAtFinalState:
@@ -180,6 +182,7 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 									"Monitor buy order - Probably Filled order %s does not exist anymore\n",
 									oerr.OrderID,
 								)
+								continue
 							case order.ErrOrderNotFound:
 								log.Printf(
 									"Monitor buy order - Order cannot be found. Weird! Order Id: %s,Error order id: %s err: %v\n",
@@ -211,7 +214,6 @@ func (tc *Trader) placeBuyOrderAndMonitor(ctx context.Context, symbol string) er
 								return fmt.Errorf("error does not match order error. Err: %e", err)
 							}
 						}
-						return nil
 					}
 
 				case BuyConditionWait:
@@ -332,7 +334,7 @@ func (tc *Trader) createLimitOrder(ctx context.Context, symbol string, side mode
 
 func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 	for symbol := range tc.sellReady {
-		log.Println("Sell signal received for", symbol)
+		log.Printf("Sell signal received for %s\n", symbol)
 
 		go func(symbol string) {
 
