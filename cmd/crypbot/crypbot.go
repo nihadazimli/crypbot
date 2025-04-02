@@ -34,7 +34,7 @@ func main() {
 	buyReady := make(chan string, len(cfg.Symbols)+1)
 	sellReady := make(chan string, len(cfg.Symbols)+1)
 
-	bybit := exchange.NewBybitAdapter()
+	bybit := exchange.NewBybitAdapter(ctx)
 
 	fe := financial.Start(ctx, bybit, buyReady)
 	orderManager := order.NewOrderManager(bybit)
