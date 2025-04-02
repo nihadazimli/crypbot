@@ -126,6 +126,7 @@ const (
 )
 
 type Adapter struct {
+	ctx                   context.Context
 	BybitClient           *bybit.Client
 	cfg                   *config.Config
 	orderWebsocket        *websocket.WebSocketClient
@@ -137,9 +138,10 @@ type Adapter struct {
 	orderStreamSubscribed bool
 }
 
-func NewBybitAdapter() *Adapter {
+func NewBybitAdapter(ctx context.Context) *Adapter {
 	cfg := config.GetConfig()
 	ba := &Adapter{
+		ctx: ctx,
 		BybitClient: bybit.NewBybitHttpClient(
 			cfg.Exchange.API.Key,
 			cfg.Exchange.API.Secret,
@@ -279,7 +281,7 @@ func (ba *Adapter) PlaceBuyOrder(
 	}
 
 	if params.OrderType == model.OrderTypeLimit {
-		err := ba.followOrder(ctx, buyDetails.OrderId)
+		err := ba.followOrder(buyDetails.OrderId)
 
 		if err != nil {
 			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
@@ -439,7 +441,7 @@ func (ba *Adapter) PlaceSellOrder(
 		)
 	}
 	if params.OrderType == model.OrderTypeLimit {
-		err := ba.followOrder(ctx, sellDetails.OrderId)
+		err := ba.followOrder(sellDetails.OrderId)
 		if err != nil {
 			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 		}
@@ -593,7 +595,7 @@ func (ba *Adapter) AmendOrder(
 	}
 	delete(ba.activeOrders, params.OrderId)
 
-	err = ba.followOrder(ctx, details.OrderId)
+	err = ba.followOrder(details.OrderId)
 	if err != nil {
 		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 	}
@@ -813,16 +815,19 @@ func (ba *Adapter) monitorActiveOrders(pollInterval time.Duration) {
 
 			if len(ba.activeOrdersToFollow) == 0 && ba.orderStreamSubscribed {
 				log.Println("No active orders left. Stopping order stream.")
-				ba.unsubscribeFromOrderStream()
+				err := ba.unsubscribeFromOrderStream()
+				if err != nil {
+					log.Printf("Cannot unsubscribe from order stream. Err: %v\n", err)
+				}
 				ba.orderStreamSubscribed = false
 			}
 		}
 	}()
 }
 
-func (ba *Adapter) followOrder(ctx context.Context, orderId string) error {
+func (ba *Adapter) followOrder(orderId string) error {
 	if !ba.orderStreamSubscribed {
-		err := ba.subscribeToOrderStream(ctx)
+		err := ba.subscribeToOrderStream(ba.ctx)
 		if err != nil {
 			return err
 		}
