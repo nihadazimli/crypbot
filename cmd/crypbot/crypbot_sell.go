@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nihadazimli/crypbot/internal/order"
+
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/exchange"
 	"github.com/nihadazimli/crypbot/internal/financial"
@@ -42,8 +44,9 @@ func main() {
 	bybitAdapter := exchange.NewBybitAdapter(ctx)
 
 	fe := financial.Start(ctx, bybitAdapter, buyReady)
+	orderManager := order.NewOrderManager(bybitAdapter)
 
-	tc := trader.Start(buyReady, sellReady, bybitAdapter, fe)
+	tc := trader.NewTrader(buyReady, sellReady, bybitAdapter, fe, orderManager)
 
 	err := tc.SellCoin(ctx, *symbolFlag, *sellCheckFlag)
 
