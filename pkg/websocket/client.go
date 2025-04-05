@@ -17,7 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type WebSocketClient struct {
+type Client struct {
 	conn         *websocket.Conn
 	url          string
 	apiKey       string
@@ -36,9 +36,9 @@ func NewWebSocketClientPublic(
 	url string,
 	pingInterval int,
 	handler MessageHandler,
-) *WebSocketClient {
+) *Client {
 
-	c := &WebSocketClient{
+	c := &Client{
 		url:          url,
 		handler:      handler,
 		pingInterval: pingInterval,
@@ -54,9 +54,9 @@ func NewWebSocketClientPrivate(
 	apiSecret string,
 	pingInterval int,
 	handler MessageHandler,
-) *WebSocketClient {
+) *Client {
 
-	c := &WebSocketClient{
+	c := &Client{
 		url:          url,
 		handler:      handler,
 		pingInterval: pingInterval,
@@ -68,7 +68,7 @@ func NewWebSocketClientPrivate(
 	return c
 }
 
-func (c *WebSocketClient) ConnectAndStart(ctx context.Context, topics []string) error {
+func (c *Client) ConnectAndStart(ctx context.Context, topics []string) error {
 	var err error
 	c.conn, _, err = websocket.DefaultDialer.Dial(c.url, nil)
 
@@ -97,7 +97,7 @@ func (c *WebSocketClient) ConnectAndStart(ctx context.Context, topics []string) 
 
 }
 
-func (c *WebSocketClient) monitorConnection(ctx context.Context, topics []string) {
+func (c *Client) monitorConnection(ctx context.Context, topics []string) {
 	ticker := time.NewTicker(time.Second * time.Duration(c.pingInterval))
 	defer ticker.Stop()
 
@@ -124,11 +124,12 @@ func (c *WebSocketClient) monitorConnection(ctx context.Context, topics []string
 	}
 }
 
-func (c *WebSocketClient) Shutdown() {
-	if !c.isConnected {
+func (c *Client) Shutdown() {
+	c.isConnected = false
+
+	if c.conn == nil {
 		return
 	}
-
 	// Cancel context
 	if c.cancel != nil {
 		c.cancel()
@@ -151,10 +152,9 @@ func (c *WebSocketClient) Shutdown() {
 	}
 
 	c.conn = nil
-	c.isConnected = false
 }
 
-func (c *WebSocketClient) subscribe(topic []string) {
+func (c *Client) subscribe(topic []string) {
 	subscribeRequest := map[string]interface{}{
 		"op":   "subscribe",
 		"args": topic,
@@ -165,7 +165,7 @@ func (c *WebSocketClient) subscribe(topic []string) {
 	}
 }
 
-func (c *WebSocketClient) readPump() {
+func (c *Client) readPump() {
 	for {
 		if !c.isConnected {
 			log.Println("Connection is not active. Exiting readPump.")
@@ -187,7 +187,7 @@ func (c *WebSocketClient) readPump() {
 	}
 }
 
-func (c *WebSocketClient) keepAlive(pingInterval int) {
+func (c *Client) keepAlive(pingInterval int) {
 	ticker := time.NewTicker(time.Second * time.Duration(pingInterval))
 	defer ticker.Stop()
 
@@ -211,7 +211,7 @@ func (c *WebSocketClient) keepAlive(pingInterval int) {
 	}
 }
 
-func (c *WebSocketClient) setupPrivateConnection() error {
+func (c *Client) setupPrivateConnection() error {
 	// Get current Unix time in milliseconds
 	expires := time.Now().UnixNano()/1e6 + 10000
 	val := fmt.Sprintf("GET/realtime%d", expires)
@@ -236,7 +236,7 @@ func (c *WebSocketClient) setupPrivateConnection() error {
 	return nil
 }
 
-func (c *WebSocketClient) sendMessage(message interface{}) error {
+func (c *Client) sendMessage(message interface{}) error {
 	encodedMessage, err := json.Marshal(message)
 	if err != nil {
 		return err

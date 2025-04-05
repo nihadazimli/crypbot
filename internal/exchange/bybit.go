@@ -129,7 +129,7 @@ type Adapter struct {
 	ctx                   context.Context
 	BybitClient           *bybit.Client
 	cfg                   *config.Config
-	orderWebsocket        *websocket.WebSocketClient
+	orderWebsocket        *websocket.Client
 	activeOrders          map[string]ActiveOrderTracker
 	activeOrdersToFollow  map[string]struct{} // These are the orders that are state followed through order websocket
 	klineWriteChan        chan model.WSInternalKline
@@ -749,7 +749,7 @@ func (ba *Adapter) StartKlineStream(
 ) error {
 	klineTopics := ba.createKlineTopics(params.Symbols, params.Interval)
 	symbolChunks := chunkSymbols(klineTopics, ba.cfg.Exchange.WebSocket.MaxSymbolsPerConnection)
-	var webSockets []*websocket.WebSocketClient
+	var webSockets []*websocket.Client
 
 	for _, chunk := range symbolChunks {
 		ws := websocket.NewWebSocketClientPublic(
