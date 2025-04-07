@@ -264,10 +264,10 @@ func (tc *Trader) updateLimitOrder(
 			)
 		}
 		updateParams = order.UpdateParams{
-			OrderID:  orderId,
-			Symbol:   symbol,
-			Price:    &updatedBuyDetails.Price,
-			Quantity: &updatedBuyDetails.Quantity,
+			OrderID: orderId,
+			Symbol:  symbol,
+			Price:   &updatedBuyDetails.Price,
+			//Quantity: &updatedBuyDetails.Quantity,
 			StopLoss: &updatedBuyDetails.StopLoss,
 		}
 	} else if side == model.OrderSideSell {
@@ -279,10 +279,10 @@ func (tc *Trader) updateLimitOrder(
 			)
 		}
 		updateParams = order.UpdateParams{
-			OrderID:  orderId,
-			Symbol:   symbol,
-			Price:    &updatedSellDetails.Price,
-			Quantity: &updatedSellDetails.Quantity,
+			OrderID: orderId,
+			Symbol:  symbol,
+			Price:   &updatedSellDetails.Price,
+			//Quantity: &updatedSellDetails.Quantity,
 		}
 	}
 
