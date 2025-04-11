@@ -9,6 +9,6 @@ RUN go mod download
 COPY . .
 
 RUN go build -o crypbot cmd/crypbot/crypbot.go
-RUN go build -o sell_bot cmd/crypbot/crypbot_sell.go
+RUN go build -o sell_bot cmd/crypbot/crypbot_trader_order.go
 
 CMD ["./crypbot"]
