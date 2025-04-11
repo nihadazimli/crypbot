@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nihadazimli/crypbot/internal/order"
 
@@ -27,6 +28,9 @@ func main() {
 		<-c
 		log.Println("Shutting down with full of grace...")
 		cancel()
+		time.Sleep(30 * time.Second)
+		log.Println("Forcing exit after timeout")
+		os.Exit(1)
 	}()
 
 	cfg := config.GetConfig()

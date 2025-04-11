@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nihadazimli/crypbot/internal/order"
 
@@ -18,8 +19,9 @@ import (
 
 func main() {
 	// Define command-line flags
+	side := flag.String("side", "buy", "Side of order. buy/sell")
 	symbolFlag := flag.String("symbol", "BTCUSDT", "Trading symbol (e.g., BTCUSDT)")
-	sellCheckFlag := flag.Bool("check", true, "Enable sell with check")
+	checkFlag := flag.Bool("check", true, "Enable sell with check")
 
 	// Parse command-line flags
 	flag.Parse()
@@ -33,6 +35,9 @@ func main() {
 		<-c
 		log.Println("Shutting down with full of grace...")
 		cancel()
+		time.Sleep(10 * time.Second)
+		log.Println("Forcing exit after timeout")
+		os.Exit(1)
 	}()
 
 	cfg := config.GetConfig()
@@ -48,10 +53,17 @@ func main() {
 
 	tc := trader.NewTrader(buyReady, sellReady, bybitAdapter, fe, orderManager)
 
-	err := tc.SellCoin(ctx, *symbolFlag, *sellCheckFlag)
+	if *side == "buy" {
+		err := tc.BuyCoin(ctx, *symbolFlag, *checkFlag)
+		if err != nil {
+			log.Println(err)
+		}
+	} else {
+		err := tc.SellCoin(ctx, *symbolFlag, *checkFlag)
 
-	if err != nil {
-		log.Println(err)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 	<-ctx.Done()
 

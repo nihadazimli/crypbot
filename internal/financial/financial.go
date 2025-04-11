@@ -58,7 +58,7 @@ func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) 
 
 	maData, err := fe.getMovingAverage(symbol)
 	if err != nil {
-		return model.MovingAverage{}, fmt.Errorf("GetMovingAverages - %s - Err: %v", err)
+		return model.MovingAverage{}, fmt.Errorf("GetMovingAverages - %s", err)
 	}
 
 	return model.MovingAverage{
@@ -329,7 +329,14 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	if len(klineHistory.ClosePrices) < fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong {
+		return nil, fmt.Errorf(
+			"%s has not enough Kline datapoints for MA Long, actual: %d required: %d\n",
+			symbol,
+			len(klineHistory.ClosePrices),
+			fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
+		)
+	}
 	maLong := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
 	maShort := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
 

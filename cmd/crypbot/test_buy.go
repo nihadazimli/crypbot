@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/nihadazimli/crypbot/internal/exchange"
 	"github.com/nihadazimli/crypbot/internal/model"
@@ -26,10 +27,11 @@ func main() {
 		<-c
 		log.Println("Shutting down gracefully...")
 		cancel()
+		time.Sleep(10 * time.Second)
+		log.Println("Forcing exit after timeout")
+		os.Exit(1)
 	}()
-
-	//cfg := config.GetConfig()
-	bybitAdapter := exchange.NewBybitAdapter()
+	bybitAdapter := exchange.NewBybitAdapter(ctx)
 	orderManager := order.NewOrderManager(bybitAdapter)
 
 	scanner := bufio.NewScanner(os.Stdin)

@@ -93,17 +93,25 @@ func (tc *Trader) handleBuyOrder(ctx context.Context, symbol string) {
 	}
 
 }
-func (tc *Trader) BuyCoin(ctx context.Context, symbol string) error {
-	err := tc.placeBuyOrderAndMonitor(ctx, symbol)
-	if err != nil {
-		return err
+func (tc *Trader) BuyCoin(ctx context.Context, symbol string, buyWithCheck bool) error {
+	log.Printf("Starting buying manually %s. Checks conditions set to %v\n", symbol, buyWithCheck)
+
+	if buyWithCheck {
+		go tc.ProcessBuySignal(ctx)
+		tc.buyReady <- symbol
+	} else {
+		err := tc.placeBuyOrderAndMonitor(ctx, symbol)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	return nil
 }
 
 func (tc *Trader) SellCoin(ctx context.Context, symbol string, sellWithCheck bool) error {
 
-	log.Printf("Starting selling manually %s. Checks conditions set to %v", symbol, sellWithCheck)
+	log.Printf("Starting selling manually %s. Checks conditions set to %v\n", symbol, sellWithCheck)
 	if sellWithCheck {
 		go tc.ProcessSellSignal(ctx)
 		tc.triggerSell(symbol)
