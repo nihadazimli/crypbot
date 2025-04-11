@@ -75,8 +75,9 @@ var cfg *Config
 
 func GetConfig() *Config {
 	if cfg == nil {
+		isProd := os.Getenv("ENVIRONMENT") == "production"
 		var err error
-		cfg, err = loadFromYaml()
+		cfg, err = loadFromYaml(isProd)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -89,8 +90,14 @@ func (c *Config) SetSymbols(symbols []string) {
 	c.Symbols = symbols
 }
 
-func loadFromYaml() (*Config, error) {
-	configPath := filepath.Join("config", "config.yaml")
+func loadFromYaml(isProd bool) (*Config, error) {
+	var configPath string
+	if isProd {
+		log.Printf("Loading production config file\n")
+		configPath = filepath.Join("config", "config.yaml")
+	} else {
+		configPath = filepath.Join("config", "config_test.yaml")
+	}
 
 	f, err := os.Open(configPath)
 	if err != nil {
