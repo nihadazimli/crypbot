@@ -140,13 +140,13 @@ func (c *Client) Shutdown() {
 	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closing connection")
 	err := c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
 	if err != nil && !errors.Is(err, websocket.ErrCloseSent) {
-		log.Printf("Failed to send close message: %v", err)
+		log.Printf("Failed to send close message: %v\n", err)
 	}
 
 	// Close WebSocket connection
 	err = c.conn.Close()
 	if err != nil {
-		log.Printf("Failed to close WebSocket connection: %v", err)
+		log.Printf("Failed to close WebSocket connection: %v\n", err)
 	} else {
 		log.Println("WebSocket connection closed successfully.")
 	}
