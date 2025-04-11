@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ type Client struct {
 	isPrivate    bool
 	ctx          context.Context
 	cancel       context.CancelFunc
+	connMutex    sync.Mutex
 }
 
 type MessageHandler func(message []byte) error
@@ -69,6 +71,7 @@ func NewWebSocketClientPrivate(
 }
 
 func (c *Client) ConnectAndStart(ctx context.Context, topics []string) error {
+
 	var err error
 	c.conn, _, err = websocket.DefaultDialer.Dial(c.url, nil)
 
@@ -104,7 +107,7 @@ func (c *Client) monitorConnection(ctx context.Context, topics []string) {
 	for {
 		select {
 		case <-ticker.C:
-			if !c.isConnected {
+			if !c.IsConnected() {
 				delay := time.Millisecond * time.Duration(rand.Float64()*4000+1000) // 1000 to 5000 milliseconds
 				log.Printf("Attempting to reconnect for %s after %v milliseconds...\n", c.url, delay)
 				time.Sleep(delay)
@@ -125,6 +128,8 @@ func (c *Client) monitorConnection(ctx context.Context, topics []string) {
 }
 
 func (c *Client) Shutdown() {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
 	c.isConnected = false
 
 	if c.conn == nil {
@@ -167,7 +172,7 @@ func (c *Client) subscribe(topic []string) {
 
 func (c *Client) readPump() {
 	for {
-		if !c.isConnected {
+		if !c.IsConnected() {
 			log.Println("Connection is not active. Exiting readPump.")
 			return
 		}
@@ -194,7 +199,7 @@ func (c *Client) keepAlive(pingInterval int) {
 	for {
 		select {
 		case <-ticker.C:
-			if !c.isConnected {
+			if !c.IsConnected() {
 				log.Println("Ping skipped: connection not established.")
 				return
 			}
@@ -219,7 +224,6 @@ func (c *Client) setupPrivateConnection() error {
 	h := hmac.New(sha256.New, []byte(c.apiSecret))
 	h.Write([]byte(val))
 
-	// Convert to hexadecimal instead of base64
 	signature := hex.EncodeToString(h.Sum(nil))
 	log.Println("signature generated : " + signature)
 
@@ -246,4 +250,10 @@ func (c *Client) sendMessage(message interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) IsConnected() bool {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	return c.conn != nil && c.isConnected
 }
