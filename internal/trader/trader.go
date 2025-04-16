@@ -394,7 +394,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 	sellOrder, err := tc.createLimitOrder(orderCtx, symbol, model.OrderSideSell)
 	orderCancel()
 	if err != nil {
-		log.Printf("Cannot Place sell order.\nSymbol: %s\nError:%v\n", symbol, err)
+		log.Printf("Can't place sell order for %s. error:%v\n", symbol, err)
 		return false
 	}
 
@@ -721,7 +721,12 @@ func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string, sell
 		if sellWithCheck {
 			tc.sellReady <- symbol
 		} else {
-			tc.executeSellOrder(ctx, symbol)
+			if success := tc.executeSellOrder(ctx, symbol); success {
+				log.Printf("Successfully executed sell order for %s\n", symbol)
+				delete(tc.activeOrders, symbol)
+			} else {
+				log.Printf("Failed to execute sell order for %s\n", symbol)
+			}
 		}
 	} else {
 		log.Printf("Balance for %s is less than 1 dollar\n", symbol)
