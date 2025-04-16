@@ -73,7 +73,7 @@ func MovingAverage(values []float64, period int) float64 {
 func FindMedian(values []float64) float64 {
 	n := len(values)
 	if n == 0 {
-		return 0 // or return an error indicating no values are present
+		return 0
 	}
 
 	// Make a copy of the slice to avoid altering the original data
