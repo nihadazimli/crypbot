@@ -1,4 +1,4 @@
-// Package config includes configs used accross the application
+// Package config includes configs used across the application
 package config
 
 import (
