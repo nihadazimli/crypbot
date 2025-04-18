@@ -378,7 +378,12 @@ func (tc *Trader) ProcessSellSignal(ctx context.Context) {
 							delete(tc.activeOrders, symbol)
 							return
 						} else {
-							log.Printf("Failed to execute sell order for %s\n", symbol)
+							log.Printf("Failed to execute sell order for %s. Calling graceful sell!\n", symbol)
+							err = tc.gracefullyFinishOrder(ctx, symbol, false)
+							if err != nil {
+								log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
+							}
+							return
 						}
 					}
 
@@ -434,8 +439,14 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 					switch oerr.Type {
 					case order.ErrOrderUnchangedParams:
 						continue
+					case order.ErrOrderAtFinalState:
+						log.Printf(
+							"Execute sell order - Probably Filled order %s does not exist anymore\n",
+							oerr.OrderID,
+						)
+						continue
 					case order.ErrOrderNotFound:
-						log.Printf("Execute sell order - %v\nCalling graceful sell for %s\n", err, symbol)
+						log.Printf("Execute sell order - Calling graceful sell for %s. Err: %v\n", symbol, err)
 						err = tc.gracefullyFinishOrder(ctx, symbol, true)
 						if err != nil {
 							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
@@ -444,7 +455,7 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 						return true
 					default:
 						log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", sellOrder.ID, err)
-						err = tc.gracefullyFinishOrder(ctx, symbol, true)
+						err = tc.gracefullyFinishOrder(ctx, symbol, false)
 						if err != nil {
 							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
 						}
