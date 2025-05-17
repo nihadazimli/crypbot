@@ -101,7 +101,7 @@ func Start(
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
-	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
+	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMATimeout) * time.Minute
 
 	fe := NewFinancialEngine(
 		cfg,
@@ -322,7 +322,7 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 
 	params := exchange.KlineHistoryParams{
 		Symbol:   symbol,
-		Interval: fe.cfg.MarketConstants.ClosePriceMAInterval,
+		Interval: fe.cfg.MarketConstants.ClosePriceMATimeout,
 		Limit:    fe.cfg.MarketConstants.ClosePriceMA100WindowSize,
 	}
 	klineHistory, err := fe.exchange.GetKlineHistory(context.Background(), params)
@@ -331,7 +331,7 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 	}
 	if len(klineHistory.ClosePrices) < fe.cfg.MarketConstants.ClosePriceMA100WindowSize {
 		return nil, fmt.Errorf(
-			"%s has not enough Kline datapoints for MA Long, actual: %d required: %d\n",
+			"%s has not enough Kline datapoints for MA100, actual: %d required: %d\n",
 			symbol,
 			len(klineHistory.ClosePrices),
 			fe.cfg.MarketConstants.ClosePriceMA100WindowSize,
@@ -497,7 +497,7 @@ func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
 	}
 
 	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("Moving average short (%.2f) is smaller than moving average long (%.2f) for %s\n",
+		log.Printf("MA50 (%.2f) is smaller than MA100 (%.2f) for %s\n",
 			movingAverages.MA50, movingAverages.MA100, symbol)
 		return false
 	}

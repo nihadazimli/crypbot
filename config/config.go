@@ -51,7 +51,7 @@ type MarketConstantsConfig struct {
 	KlineInterval             int    `yaml:"kline_interval"`
 	KlineCategory             string `yaml:"kline_category"`
 	MetricsWindowSize         int    `yaml:"metrics_window_size"`
-	ClosePriceMAInterval      int    `yaml:"close_price_ma_interval"`
+	ClosePriceMATimeout       int    `yaml:"close_price_ma_timeout"`
 	ClosePriceMA100WindowSize int    `yaml:"close_price_ma100_window_size"`
 	ClosePriceMA50WindowSize  int    `yaml:"close_price_ma50_window_size"`
 }
