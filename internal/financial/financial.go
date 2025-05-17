@@ -323,22 +323,22 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 	params := exchange.KlineHistoryParams{
 		Symbol:   symbol,
 		Interval: fe.cfg.MarketConstants.ClosePriceMAInterval,
-		Limit:    fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
+		Limit:    fe.cfg.MarketConstants.ClosePriceMA100WindowSize,
 	}
 	klineHistory, err := fe.exchange.GetKlineHistory(context.Background(), params)
 	if err != nil {
 		return nil, err
 	}
-	if len(klineHistory.ClosePrices) < fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong {
+	if len(klineHistory.ClosePrices) < fe.cfg.MarketConstants.ClosePriceMA100WindowSize {
 		return nil, fmt.Errorf(
 			"%s has not enough Kline datapoints for MA Long, actual: %d required: %d\n",
 			symbol,
 			len(klineHistory.ClosePrices),
-			fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
+			fe.cfg.MarketConstants.ClosePriceMA100WindowSize,
 		)
 	}
-	ma100 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
-	ma50 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
+	ma100 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMA100WindowSize)
+	ma50 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMA50WindowSize)
 
 	fe.maCacheMutex.Lock()
 	fe.maCache[symbol] = &MACache{

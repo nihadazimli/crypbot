@@ -47,13 +47,13 @@ type RequestPathsConfig struct {
 }
 
 type MarketConstantsConfig struct {
-	CloseKlineTimeoutMinutes    int    `yaml:"close_kline_timeout_minutes"`
-	KlineInterval               int    `yaml:"kline_interval"`
-	KlineCategory               string `yaml:"kline_category"`
-	MetricsWindowSize           int    `yaml:"metrics_window_size"`
-	ClosePriceMAInterval        int    `yaml:"close_price_ma_interval"`
-	ClosePriceMAWindowSizeLong  int    `yaml:"close_price_ma_window_size_long"`
-	ClosePriceMAWindowSizeShort int    `yaml:"close_price_ma_window_size_short"`
+	CloseKlineTimeoutMinutes  int    `yaml:"close_kline_timeout_minutes"`
+	KlineInterval             int    `yaml:"kline_interval"`
+	KlineCategory             string `yaml:"kline_category"`
+	MetricsWindowSize         int    `yaml:"metrics_window_size"`
+	ClosePriceMAInterval      int    `yaml:"close_price_ma_interval"`
+	ClosePriceMA100WindowSize int    `yaml:"close_price_ma100_window_size"`
+	ClosePriceMA50WindowSize  int    `yaml:"close_price_ma50_window_size"`
 }
 
 type TraderConfig struct {
