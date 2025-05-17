@@ -22,8 +22,8 @@ var (
 )
 
 type MACache struct {
-	MAShort     float64
-	MALong      float64
+	MA50        float64
+	MA100       float64
 	LastUpdated time.Time
 }
 
@@ -62,8 +62,8 @@ func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) 
 	}
 
 	return model.MovingAverage{
-		MA50:  maData.MAShort,
-		MA100: maData.MALong,
+		MA50:  maData.MA50,
+		MA100: maData.MA100,
 	}, nil
 
 }
@@ -337,13 +337,13 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 			fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong,
 		)
 	}
-	maLong := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
-	maShort := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
+	ma100 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeLong)
+	ma50 := numutils.MovingAverage(klineHistory.ClosePrices, fe.cfg.MarketConstants.ClosePriceMAWindowSizeShort)
 
 	fe.maCacheMutex.Lock()
 	fe.maCache[symbol] = &MACache{
-		MALong:      maLong,
-		MAShort:     maShort,
+		MA100:       ma100,
+		MA50:        ma50,
 		LastUpdated: now,
 	}
 	fe.maCacheMutex.Unlock()
