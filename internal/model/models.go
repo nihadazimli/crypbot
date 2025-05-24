@@ -51,10 +51,19 @@ type WSKlineData struct {
 
 // WSInternalKline is filtered kline data from websocket to internal logic for processing
 type WSInternalKline struct {
-	Symbol  string
-	Close   float64
-	Confirm bool
-	Volume  float64
+	Symbol   string
+	Close    float64
+	IsClosed bool
+	Volume   float64
+}
+
+type MarketEvent struct {
+	Symbol    string
+	Price     float64
+	Volume    float64
+	RSI       float64
+	IsClosed  bool
+	Timestamp float64
 }
 
 type KlineApiResponse struct {

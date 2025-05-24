@@ -781,10 +781,10 @@ func (ba *Adapter) handleKlineMessages(message []byte) error {
 
 	for _, kline := range WSKline.Data {
 		internalKline := model.WSInternalKline{
-			Symbol:  getSymbolFromKlineTopic(WSKline.Topic),
-			Close:   kline.Close,
-			Confirm: kline.Confirm,
-			Volume:  kline.Volume,
+			Symbol:   getSymbolFromKlineTopic(WSKline.Topic),
+			Close:    kline.Close,
+			IsClosed: kline.Confirm,
+			Volume:   kline.Volume,
 		}
 		ba.klineWriteChan <- internalKline
 

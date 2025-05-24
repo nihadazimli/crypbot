@@ -133,3 +133,24 @@ func CalculateRSI(prices []float64, n int) float64 {
 
 	return rsi
 }
+
+func StandardDeviation(values []float64, period int) float64 {
+	if len(values) < period {
+		return 0
+	}
+
+	data := values[len(values)-period:]
+	mean := 0.0
+	for _, v := range data {
+		mean += v
+	}
+	mean /= float64(len(data))
+
+	variance := 0.0
+	for _, v := range data {
+		variance += math.Pow(v-mean, 2)
+	}
+	variance /= float64(len(data))
+
+	return math.Sqrt(variance)
+}
