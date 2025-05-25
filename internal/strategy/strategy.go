@@ -1,11 +1,12 @@
 package strategy
 
-import "github.com/nihadazimli/crypbot/internal/model"
-
-type Name string
-
-type Strategy interface {
-	Name() Name
-	ProcessKline(kline model.WSInternalKline)
-	CycleCompleted()
-}
+//
+//import (
+//	"context"
+//	"github.com/nihadazimli/crypbot/internal/model"
+//)
+//
+//type Strategy interface {
+//handleMarketEvent(ctx context.Context,event model.MarketEvent)
+//Start(ctx context.Context)
+//}

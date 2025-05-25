@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -28,21 +27,15 @@ type MACache struct {
 }
 
 type Engine struct {
-	httpClient             *http.Client
-	cfg                    *config.Config
-	exchange               exchange.Exchange
-	buyReady               chan string
-	klineReceived          chan model.WSInternalKline
-	Coins                  map[string]*model.CoinMetrics
-	maCache                map[string]*MACache
-	maCacheTTL             time.Duration
-	maCacheMutex           sync.RWMutex
-	cycleMutex             sync.Mutex
-	cycleTimer             *time.Timer
-	cycleTimeout           time.Duration
-	expectedCoinCount      int                // Total number of expected coin count in every cycle
-	processedCoinsInCycle  map[string]bool    // Tracks all processed coins count in current cycle
-	buyTradeCandidateCoins map[string]float64 // Stores coins with buy signal in current cycle with RSI value
+	httpClient       *http.Client
+	cfg              *config.Config
+	exchange         exchange.Exchange
+	klineReceived    chan model.WSInternalKline
+	marketEventsChan chan<- model.MarketEvent
+	Coins            map[string]*model.CoinMetrics
+	maCache          map[string]*MACache
+	maCacheTTL       time.Duration
+	maCacheMutex     sync.RWMutex
 }
 
 func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) {
@@ -64,31 +57,27 @@ func NewFinancialEngine(
 	cfg *config.Config,
 	exchange exchange.Exchange,
 	klineReceived chan model.WSInternalKline,
-	buyReady chan string,
+	marketEventsChan chan<- model.MarketEvent,
 	httpTimeoutSec int,
 	maCacheTTL time.Duration,
 	expectedCoinCount int,
 ) *Engine {
 	return &Engine{
-		httpClient:             &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
-		cfg:                    cfg,
-		Coins:                  make(map[string]*model.CoinMetrics),
-		maCache:                make(map[string]*MACache),
-		maCacheTTL:             maCacheTTL,
-		klineReceived:          klineReceived,
-		buyReady:               buyReady,
-		exchange:               exchange,
-		expectedCoinCount:      expectedCoinCount,
-		buyTradeCandidateCoins: make(map[string]float64),
-		processedCoinsInCycle:  make(map[string]bool),
-		cycleTimeout:           time.Duration(cfg.MarketConstants.CloseKlineTimeoutMinutes) * time.Minute,
+		httpClient:       &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		cfg:              cfg,
+		Coins:            make(map[string]*model.CoinMetrics),
+		maCache:          make(map[string]*MACache),
+		maCacheTTL:       maCacheTTL,
+		klineReceived:    klineReceived,
+		marketEventsChan: marketEventsChan,
+		exchange:         exchange,
 	}
 }
 
 func Start(
 	ctx context.Context,
 	exchangeInstance exchange.Exchange,
-	buyReady chan string,
+	marketEventsChan chan<- model.MarketEvent,
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
@@ -98,7 +87,7 @@ func Start(
 		cfg,
 		exchangeInstance,
 		klineReceived,
-		buyReady,
+		marketEventsChan,
 		cfg.Exchange.API.Timeout,
 		maCacheTimeout,
 		len(cfg.Symbols),
@@ -179,8 +168,29 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 		return
 	}
 	mapMutex.Unlock()
-	fe.evaluateKlineSignal(klineDatapoint.Symbol)
 
+	fe.sendMarketEvent(klineDatapoint)
+
+}
+
+func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
+	rsi, _ := fe.GetRSIClosed(klineDatapoint.Symbol)
+
+	marketEvent := model.MarketEvent{
+		Symbol:    klineDatapoint.Symbol,
+		Price:     klineDatapoint.Close,
+		Volume:    klineDatapoint.Volume,
+		RSI:       rsi,
+		IsClosed:  klineDatapoint.IsClosed,
+		Timestamp: float64(time.Now().Unix()),
+	}
+
+	select {
+	case fe.marketEventsChan <- marketEvent:
+	default:
+		log.Printf("Financial Engine: Warning - market events channel is full, dropping event for symbol %s\n",
+			klineDatapoint.Symbol)
+	}
 }
 
 func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
@@ -367,131 +377,4 @@ func (fe *Engine) cleanExpiredCache() {
 			delete(fe.maCache, symbol)
 		}
 	}
-}
-
-func (fe *Engine) evaluateKlineSignal(symbol string) {
-	fe.cycleMutex.Lock()
-	defer fe.cycleMutex.Unlock()
-
-	// Start the timer if it is the first coin to process
-	if len(fe.processedCoinsInCycle) == 0 {
-		if fe.cycleTimer != nil {
-			fe.cycleTimer.Stop()
-		}
-
-		fe.cycleTimer = time.AfterFunc(fe.cycleTimeout, func() {
-			fe.handleCycleTimeout()
-		})
-	}
-
-	fe.processedCoinsInCycle[symbol] = true
-
-	rsiClosed, exists := fe.GetRSIClosed(symbol)
-	if !exists {
-		log.Printf("evaluateKlineSignal - %s does not have RSI closed\n", symbol)
-		return
-	}
-
-	if fe.hasSymbolBuySignal(symbol) {
-		fe.buyTradeCandidateCoins[symbol] = rsiClosed
-	}
-
-	if len(fe.processedCoinsInCycle) >= fe.expectedCoinCount {
-		fe.selectAndSignal()
-		fe.resetCycle()
-	}
-
-}
-
-func (fe *Engine) resetCycle() {
-	fe.processedCoinsInCycle = make(map[string]bool)
-	fe.buyTradeCandidateCoins = make(map[string]float64)
-	if fe.cycleTimer != nil {
-		fe.cycleTimer.Stop()
-		fe.cycleTimer = nil
-	}
-	log.Printf("resetCycle - Cycle reset\n")
-}
-
-func (fe *Engine) selectAndSignal() {
-
-	if len(fe.buyTradeCandidateCoins) == 0 {
-		return // Nothing to buy in this cycle
-	}
-
-	var selectedSymbol string
-	minRsi := math.MaxFloat64
-	for symbol, rsiValue := range fe.buyTradeCandidateCoins {
-		if rsiValue < minRsi {
-			selectedSymbol = symbol
-			minRsi = rsiValue
-		}
-	}
-
-	log.Printf("selectAndSignal - EligibleCoins: %v, Selected Coin: %s with RSI: %.2f\n",
-		fe.buyTradeCandidateCoins, selectedSymbol, minRsi)
-
-	fe.buyReady <- selectedSymbol
-}
-
-func (fe *Engine) handleCycleTimeout() {
-	fe.cycleMutex.Lock()
-	defer fe.cycleMutex.Unlock()
-	var missingCoins []string
-	for _, symbol := range fe.cfg.Symbols {
-		if !fe.processedCoinsInCycle[symbol] {
-			missingCoins = append(missingCoins, symbol)
-		}
-	}
-	// Try to load data for missing coins
-	if len(missingCoins) > 0 {
-		log.Printf("handleCycleTimeout - Attempting to load data for missing coins: %v\n", missingCoins)
-		err := fe.loadRecentKlineData(context.Background(), missingCoins)
-		if err != nil {
-			log.Printf("handleCycleTimeout - Failed to load missing data: %v\n", err)
-		}
-	}
-
-	log.Printf("handleCycleTimeout - Cycle timeout reached. Processed %d out of %d coins\n",
-		len(fe.processedCoinsInCycle), fe.expectedCoinCount)
-
-	fe.selectAndSignal()
-	fe.resetCycle()
-}
-
-func (fe *Engine) hasSymbolBuySignal(symbol string) bool {
-	rsiClosed, rsiOk := fe.GetRSIClosed(symbol)
-	if !rsiOk {
-		log.Println("No RSI data available")
-		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
-		return false
-	}
-
-	volumeMedian, volumeOk := fe.GetVolumeValueMedian(symbol)
-	if !volumeOk {
-		log.Println("No volume data available")
-		return false
-	}
-
-	movingAverages, err := fe.GetMovingAverages(symbol)
-	if err != nil {
-		log.Printf("Could not retrieve MA - Err: %s\n", err)
-		return false
-	}
-
-	if rsiClosed > fe.cfg.Trader.RSIBuyValue {
-		return false
-	}
-
-	if volumeMedian < fe.cfg.Trader.MedianVolumeThreshold {
-		return false
-	}
-
-	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf("MA50 (%.2f) is smaller than MA100 (%.2f) for %s\n",
-			movingAverages.MA50, movingAverages.MA100, symbol)
-		return false
-	}
-
-	return true
 }

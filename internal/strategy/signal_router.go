@@ -31,8 +31,8 @@ type Router struct {
 }
 
 // NewRouter creates a new signal router
-func NewRouter(ctx context.Context, inputChannel <-chan model.MarketEvent) *Router {
-	ctx, cancel := context.WithCancel(ctx)
+func NewRouter(parentCtx context.Context, inputChannel <-chan model.MarketEvent) *Router {
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	return &Router{
 		inputChannel: inputChannel,
