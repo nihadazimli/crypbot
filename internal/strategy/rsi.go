@@ -7,9 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nihadazimli/crypbot/internal/financial"
-	"github.com/nihadazimli/crypbot/internal/trader"
-
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/model"
 )
@@ -24,19 +21,31 @@ const (
 
 type Symbol string
 
+type TraderService interface {
+	ExecuteBuy(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error
+	ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType) error
+}
+
+type FinancialService interface {
+	GetRSIClosed(symbol string) (float64, bool)
+	GetRSILive(symbol string) (float64, bool)
+	GetVolumeValueMedian(symbol string) (float64, bool)
+	GetMovingAverages(symbol string) (model.MovingAverage, error)
+}
 type RSIStrategy struct {
 	// Configuration
 	cfg          *config.Config
 	subAccountID string
 
 	// Dependencies
-	financial    financial.EngineInterface
-	trader       trader.Trader
+	financial    FinancialService
+	trader       TraderService
 	marketEvents <-chan model.MarketEvent
 
 	// Strategy state
 	state      StrategyState
 	heldSymbol Symbol
+	stateMutex sync.RWMutex
 
 	// Cycle management (moved from financial engine)
 	cycleMutex             sync.Mutex
@@ -53,8 +62,8 @@ type RSIStrategy struct {
 
 func NewRSIStrategy(
 	subAccountID string,
-	financial financial.EngineInterface,
-	trader trader.Trader,
+	financial FinancialService,
+	trader TraderService,
 	marketEvents <-chan model.MarketEvent,
 ) *RSIStrategy {
 	cfg := config.GetConfig()
@@ -102,7 +111,11 @@ func (rs *RSIStrategy) handleMarketEvent(ctx context.Context, event model.Market
 		return
 	}
 
-	switch rs.state {
+	rs.stateMutex.RLock()
+	state := rs.state
+	rs.stateMutex.RUnlock()
+
+	switch state {
 	case StateWatchingToBuy:
 		rs.evaluateKlineSignalToBuy(ctx, event)
 	case StateHolding:
@@ -110,6 +123,10 @@ func (rs *RSIStrategy) handleMarketEvent(ctx context.Context, event model.Market
 			return
 		}
 		rs.evaluateSellSignal(ctx, event)
+	case StateInProgress:
+		return
+	default:
+		panic("RSI Strategy - unhandled state case")
 	}
 }
 
@@ -142,36 +159,42 @@ func (rs *RSIStrategy) evaluateKlineSignalToBuy(ctx context.Context, event model
 }
 
 func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.MarketEvent) {
-	// Only evaluate sell for the symbol we're holding
+	rs.stateMutex.RLock()
 	if rs.state != StateHolding {
+		rs.stateMutex.RUnlock()
 		return
 	}
+	rs.stateMutex.RUnlock()
 
-	// Get current RSI for the symbol
 	rsiClosed, ok := rs.financial.GetRSIClosed(event.Symbol)
-	if !ok {
-		log.Printf("RSI Strategy: No RSI data available for sell evaluation: %s\n", event.Symbol)
+	if !ok || rsiClosed < rs.cfg.Trader.RSISellValue {
 		return
 	}
 
-	if rsiClosed >= rs.cfg.Trader.RSISellValue {
-		log.Printf("RSI Strategy: RSI hit sell threshold. %s: %.2f\n", event.Symbol, rsiClosed)
+	log.Printf("RSI Strategy: RSI hit sell threshold. %s: %.2f\n", event.Symbol, rsiClosed)
+	rs.stateMutex.Lock()
+	rs.state = StateInProgress
+	rs.stateMutex.Unlock()
 
-		err := rs.trader.SellCoin(ctx, event.Symbol, false)
-		if err != nil {
-			log.Printf("RSI Strategy: Sell execution failed for %s. Err: %v\n", event.Symbol, err)
-			return
-		}
-
-		//if result.Success {
-		//	profit := (result.AvgPrice - rs.entryPrice) * result.FilledQty
-		//	log.Printf("RSI Strategy: ✅ Successfully sold %f %s at %f (Profit: %f)\n",
-		//		result.FilledQty, event.Symbol, result.AvgPrice, profit)
-		//	rs.clearPosition()
-		//} else {
-		//	log.Printf("RSI Strategy: Sell failed for %s. Error: %v\n", event.Symbol, result.Error)
-		//}
+	err := rs.trader.ExecuteSell(ctx, event.Symbol, model.OrderTypeLimit)
+	rs.stateMutex.Lock()
+	if err != nil {
+		log.Printf("RSI Strategy: Sell execution failed for %s. Err: %v\n", event.Symbol, err)
+		rs.state = StateHolding // Back to holding on failure
+	} else {
+		rs.state = StateWatchingToBuy
+		rs.heldSymbol = ""
+		log.Printf("RSI Strategy: Successfully sold %s\n", event.Symbol)
 	}
+	rs.stateMutex.Unlock()
+	//if result.Success {
+	//	profit := (result.AvgPrice - rs.entryPrice) * result.FilledQty
+	//	log.Printf("RSI Strategy: ✅ Successfully sold %f %s at %f (Profit: %f)\n",
+	//		result.FilledQty, event.Symbol, result.AvgPrice, profit)
+	//	rs.clearPosition()
+	//} else {
+	//	log.Printf("RSI Strategy: Sell failed for %s. Error: %v\n", event.Symbol, result.Error)
+	//}
 }
 
 func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
@@ -209,7 +232,11 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 		log.Printf("RSI Strategy: No buy candidates in this cycle\n")
 		return
 	}
+	rs.stateMutex.Lock()
+	rs.state = StateInProgress
+	rs.stateMutex.Unlock()
 
+	// TODO: While waiting for all coins RSI values might have changed. Might be better to decide on RSI Live here
 	var selectedSymbol string
 	minRsi := math.MaxFloat64
 	for symbol, rsiValue := range rs.buyTradeCandidateCoins {
@@ -223,11 +250,18 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 		rs.buyTradeCandidateCoins, selectedSymbol, minRsi)
 
 	// Execute buy order
-	err := rs.trader.BuyCoin(ctx, selectedSymbol, false)
+	err := rs.trader.ExecuteBuy(ctx, selectedSymbol, model.OrderTypeLimit, rs.checkBuyConditions)
+
+	rs.stateMutex.Lock()
 	if err != nil {
 		log.Printf("RSI Strategy: Buy execution failed for %s. Err: %v\n", selectedSymbol, err)
-		return
+		rs.state = StateWatchingToBuy
+		rs.heldSymbol = ""
+	} else {
+		rs.state = StateHolding
+		rs.heldSymbol = Symbol(selectedSymbol)
 	}
+	rs.stateMutex.Unlock()
 
 	//if result.Success {
 	//	rs.state = StateHolding
@@ -238,6 +272,64 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 	//} else {
 	//	log.Printf("RSI Strategy: Buy failed for %s. Error: %v\n", selectedSymbol, result.Error)
 	//}
+}
+func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) model.OrderConditionResult {
+	rsiLive, rsiOk := rs.financial.GetRSILive(symbol)
+	if !rsiOk {
+		log.Printf("RSI Strategy -checkBuyConditions - No RSI closed data available for %s\n", symbol)
+		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
+		return model.ConditionCancel
+	}
+
+	rsiClosed, rsiOk := rs.financial.GetRSIClosed(symbol)
+	if !rsiOk {
+		log.Printf("RSI Strategy -checkBuyConditions - No RSI live data available for %s\n", symbol)
+		return model.ConditionCancel
+	}
+
+	volumeMedian, volumeOk := rs.financial.GetVolumeValueMedian(symbol)
+	if !volumeOk {
+		log.Printf("RSI Strategy -checkBuyConditions - No volume data available for %s\n", symbol)
+		return model.ConditionCancel
+	}
+
+	movingAverages, err := rs.financial.GetMovingAverages(symbol)
+	if err != nil {
+		log.Printf("RSI Strategy -checkBuyConditions - Could not retrieve MA - Err: %s\n", err)
+		return model.ConditionCancel
+	}
+
+	if movingAverages.MA50 < movingAverages.MA100 {
+		log.Printf(
+			"RSI Strategy -checkBuyConditions - MA short (%.2f) is smaller than MA long (%.2f) for %s\n",
+			movingAverages.MA50,
+			movingAverages.MA100,
+			symbol,
+		)
+		return model.ConditionCancel
+	}
+
+	if rsiClosed > rs.cfg.Trader.RSIBuyValue {
+		log.Printf("RSI Strategy -checkBuyConditions - RSIClose is bigger than threshold for %s\n", symbol)
+		return model.ConditionCancel
+	}
+
+	if volumeMedian < rs.cfg.Trader.MedianVolumeThreshold {
+		log.Printf("RSI Strategy -checkBuyConditions - Median Volume below threshold for %s\n", symbol)
+		return model.ConditionCancel
+	}
+
+	if rsiLive > rs.cfg.Trader.RSIBuyValue {
+		log.Printf(
+			"RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n",
+			rs.cfg.Trader.RSIBuyValue,
+			symbol,
+			rsiLive,
+		)
+		return model.ConditionWait
+	}
+
+	return model.ConditionMet
 }
 
 func (rs *RSIStrategy) resetCycle() {

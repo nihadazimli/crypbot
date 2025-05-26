@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -93,6 +94,7 @@ type MovingAverage struct {
 	MA100 float64
 	MA50  float64
 }
+type ConditionChecker func(ctx context.Context, symbol string) OrderConditionResult
 
 type OrderType string
 
@@ -100,6 +102,14 @@ const (
 	OrderTypeMarket  OrderType = "Market"
 	OrderTypeLimit   OrderType = "Limit"
 	OrderTypeUnknown OrderType = "N/A"
+)
+
+type OrderConditionResult int
+
+const (
+	ConditionMet OrderConditionResult = iota
+	ConditionWait
+	ConditionCancel
 )
 
 func ParseOrderType(orderType string) OrderType {

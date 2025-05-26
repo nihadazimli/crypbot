@@ -1,5 +1,5 @@
-// Package strategy provides signal routing functionality
-package strategy
+// Package router provides signal routing functionality
+package router
 
 import (
 	"context"

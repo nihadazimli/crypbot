@@ -60,7 +60,6 @@ func NewFinancialEngine(
 	marketEventsChan chan<- model.MarketEvent,
 	httpTimeoutSec int,
 	maCacheTTL time.Duration,
-	expectedCoinCount int,
 ) *Engine {
 	return &Engine{
 		httpClient:       &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
@@ -90,7 +89,6 @@ func Start(
 		marketEventsChan,
 		cfg.Exchange.API.Timeout,
 		maCacheTimeout,
-		len(cfg.Symbols),
 	)
 
 	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
