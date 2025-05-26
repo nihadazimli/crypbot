@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -96,6 +96,7 @@ func loadFromYaml(isProd bool) (*Config, error) {
 		log.Printf("Loading production config file\n")
 		configPath = filepath.Join("config", "config.yaml")
 	} else {
+		log.Printf("Loading local config file\n")
 		configPath = filepath.Join("config", "config_test.yaml")
 	}
 
