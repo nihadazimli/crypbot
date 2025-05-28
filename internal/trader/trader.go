@@ -492,19 +492,19 @@ func (tc *Trader) CalculateBuyOrderDetails(
 }
 
 func (tc *Trader) getSellOrderCheckDuration() time.Duration {
-	return time.Duration(tc.cfg.Trader.SellCheckInterval) * time.Second
+	return tc.cfg.Trader.SellCheckInterval
 }
 
 func (tc *Trader) getAPITimeoutDuration() time.Duration {
-	return time.Duration(tc.cfg.Exchange.API.Timeout) * time.Second
+	return tc.cfg.Exchange.API.Timeout
 }
 
 func (tc *Trader) getBuyCheckIntervalDuration() time.Duration {
-	return time.Duration(tc.cfg.Trader.BuyCheckInterval) * time.Second
+	return tc.cfg.Trader.BuyCheckInterval
 }
 
 func (tc *Trader) getSellCheckIntervalDuration() time.Duration {
-	return time.Duration(tc.cfg.Trader.SellCheckInterval) * time.Second
+	return tc.cfg.Trader.SellCheckInterval
 }
 
 func (tc *Trader) getRSISellValue() float64 {

@@ -78,7 +78,7 @@ func NewRSIStrategy(
 		expectedCoinCount:      len(cfg.Symbols),
 		processedCoinsInCycle:  make(map[string]bool),
 		buyTradeCandidateCoins: make(map[string]float64),
-		cycleTimeout:           time.Duration(cfg.MarketConstants.CloseKlineTimeoutMinutes) * time.Minute,
+		cycleTimeout:           cfg.MarketConstants.CloseKlineTimeout,
 	}
 }
 

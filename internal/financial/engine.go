@@ -58,11 +58,11 @@ func NewFinancialEngine(
 	exchange exchange.Exchange,
 	klineReceived chan model.WSInternalKline,
 	marketEventsChan chan<- model.MarketEvent,
-	httpTimeoutSec int,
+	httpTimeout time.Duration,
 	maCacheTTL time.Duration,
 ) *Engine {
 	return &Engine{
-		httpClient:       &http.Client{Timeout: time.Duration(httpTimeoutSec) * time.Second},
+		httpClient:       &http.Client{Timeout: httpTimeout},
 		cfg:              cfg,
 		Coins:            make(map[string]*model.CoinMetrics),
 		maCache:          make(map[string]*MACache),
@@ -80,7 +80,7 @@ func Start(
 ) *Engine {
 	cfg := config.GetConfig()
 	klineReceived := make(chan model.WSInternalKline)
-	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMATimeout) * time.Minute
+	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
 
 	fe := NewFinancialEngine(
 		cfg,
@@ -321,7 +321,7 @@ func (fe *Engine) getMovingAverage(symbol string) (*MACache, error) {
 
 	params := exchange.KlineHistoryParams{
 		Symbol:   symbol,
-		Interval: fe.cfg.MarketConstants.ClosePriceMATimeout,
+		Interval: fe.cfg.MarketConstants.ClosePriceMAInterval,
 		Limit:    fe.cfg.MarketConstants.ClosePriceMA100WindowSize,
 	}
 	klineHistory, err := fe.exchange.GetKlineHistory(context.Background(), params)
