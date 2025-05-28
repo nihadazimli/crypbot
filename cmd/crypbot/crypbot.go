@@ -62,7 +62,12 @@ func main() {
 			rsiEventsChan := make(chan model.MarketEvent, 5)
 			eventRouter.RegisterStrategy("rsi", rsiEventsChan)
 
-			rsiStrategy := strategy.NewRSIStrategy(rsiConfig.Credentials.SubAccountID, financialEngine, rsiTrader, rsiEventsChan)
+			rsiStrategy := strategy.NewRSIStrategy(
+				rsiConfig.Credentials.SubAccountID,
+				financialEngine,
+				rsiTrader,
+				rsiEventsChan,
+			)
 
 			go rsiStrategy.Start(ctx)
 			log.Println("RSI Strategy started successfully!")
