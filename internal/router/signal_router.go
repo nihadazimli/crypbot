@@ -9,19 +9,13 @@ import (
 	"github.com/nihadazimli/crypbot/internal/model"
 )
 
-// StrategyChannel holds a strategy's information and its channel
-type StrategyChannel struct {
-	Name    string
-	Channel chan<- model.MarketEvent
-}
-
 // Router handles fan-out distribution of market events to strategies
 type Router struct {
 	// Input channel from Financial Engine
 	inputChannel <-chan model.MarketEvent
 
 	// Registered strategy channels
-	strategies    map[string]StrategyChannel
+	strategies    map[string]chan<- model.MarketEvent
 	strategiesMux sync.RWMutex
 
 	// Control
@@ -36,7 +30,7 @@ func NewRouter(parentCtx context.Context, inputChannel <-chan model.MarketEvent)
 
 	return &Router{
 		inputChannel: inputChannel,
-		strategies:   make(map[string]StrategyChannel),
+		strategies:   make(map[string]chan<- model.MarketEvent),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -47,10 +41,7 @@ func (r *Router) RegisterStrategy(name string, channel chan<- model.MarketEvent)
 	r.strategiesMux.Lock()
 	defer r.strategiesMux.Unlock()
 
-	r.strategies[name] = StrategyChannel{
-		Name:    name,
-		Channel: channel,
-	}
+	r.strategies[name] = channel
 
 	log.Printf("Signal Router: Registered strategy '%s'", name)
 }
@@ -114,7 +105,7 @@ func (r *Router) broadcastEvent(event model.MarketEvent) {
 
 	for name, strategyChannel := range r.strategies {
 		select {
-		case strategyChannel.Channel <- event:
+		case strategyChannel <- event:
 		default:
 			log.Printf("Signal Router: Warning - Strategy '%s' channel is full, dropping market event for symbol %s",
 				name, event.Symbol)

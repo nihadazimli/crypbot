@@ -30,26 +30,20 @@ type FinancialService interface {
 }
 
 type Trader struct {
-	buyReady  chan string
-	sellReady chan string
 	cfg       *config.Config
-	exchange  exchange.Exchange
+	exchange  exchange.TradingClient
 	order     order.OrderManager
 	financial FinancialService
 }
 
 func NewTrader(
-	buyReady chan string,
-	sellReady chan string,
-	market exchange.Exchange,
+	market exchange.TradingClient,
 	financial FinancialService,
 	order order.OrderManager,
 ) *Trader {
 	cfg := config.GetConfig()
 
 	return &Trader{
-		buyReady:  buyReady,
-		sellReady: sellReady,
 		cfg:       cfg,
 		exchange:  market,
 		financial: financial,
@@ -57,7 +51,12 @@ func NewTrader(
 	}
 }
 
-func (tc *Trader) ExecuteBuy(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error {
+func (tc *Trader) ExecuteBuy(
+	ctx context.Context,
+	symbol string,
+	orderType model.OrderType,
+	checker model.ConditionChecker,
+) error {
 	var err error
 	if orderType == model.OrderTypeLimit {
 		err = tc.placeBuyOrderAndMonitor(ctx, symbol, checker)

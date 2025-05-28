@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -121,6 +123,39 @@ func GetBollingerConfig() (*BollingerConfig, error) {
 	}
 
 	return &config.Strategies.Bollinger, nil
+}
+
+func GetEnabledStrategies() map[string]interface{} {
+	config := GetConfig()
+	enabled := make(map[string]interface{})
+
+	strategiesValue := reflect.ValueOf(config.Strategies)
+	strategiesType := reflect.TypeOf(config.Strategies)
+
+	// Iterate through all fields in StrategiesConfig
+	for i := 0; i < strategiesValue.NumField(); i++ {
+		field := strategiesValue.Field(i)
+		fieldType := strategiesType.Field(i)
+
+		if !field.CanInterface() {
+			continue
+		}
+
+		strategy := field.Interface()
+
+		// Use reflection to check if the strategy has an Enabled field
+		strategyValue := reflect.ValueOf(strategy)
+		if strategyValue.Kind() == reflect.Struct {
+			enabledField := strategyValue.FieldByName("Enabled")
+			if enabledField.IsValid() && enabledField.Kind() == reflect.Bool && enabledField.Bool() {
+				strategyName := strings.ToLower(fieldType.Name)
+				enabled[strategyName] = strategy
+				log.Printf("Found enabled strategy: %s", strategyName)
+			}
+		}
+	}
+
+	return enabled
 }
 
 func (c *Config) SetSymbols(symbols []string) {

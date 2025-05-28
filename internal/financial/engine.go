@@ -29,7 +29,7 @@ type MACache struct {
 type Engine struct {
 	httpClient       *http.Client
 	cfg              *config.Config
-	exchange         exchange.Exchange
+	exchange         exchange.MarketDataClient
 	klineReceived    chan model.WSInternalKline
 	marketEventsChan chan<- model.MarketEvent
 	Coins            map[string]*model.CoinMetrics
@@ -55,7 +55,7 @@ func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
 func NewFinancialEngine(
 	cfg *config.Config,
-	exchange exchange.Exchange,
+	exchange exchange.MarketDataClient,
 	klineReceived chan model.WSInternalKline,
 	marketEventsChan chan<- model.MarketEvent,
 	httpTimeout time.Duration,
@@ -75,7 +75,7 @@ func NewFinancialEngine(
 
 func Start(
 	ctx context.Context,
-	exchangeInstance exchange.Exchange,
+	exchangeInstance exchange.MarketDataClient,
 	marketEventsChan chan<- model.MarketEvent,
 ) *Engine {
 	cfg := config.GetConfig()

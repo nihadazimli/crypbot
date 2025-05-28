@@ -8,7 +8,7 @@ import (
 type CredentialsConfig struct {
 	APIKey       string `yaml:"api_key"`
 	APISecret    string `yaml:"api_secret"`
-	SubAccountID string `yaml:"subaccount_id,omitempty"`
+	SubAccountID string `yaml:"sub_account_id,omitempty"`
 }
 type CommonTraderConfig struct {
 	OrderCheckInterval    time.Duration `yaml:"order_check_interval"`

@@ -14,10 +14,10 @@ import (
 
 type Manager struct {
 	cfg      *config.Config
-	exchange exchange.Exchange
+	exchange exchange.TradingClient
 }
 
-func NewOrderManager(exchange exchange.Exchange) *Manager {
+func NewOrderManager(exchange exchange.TradingClient) *Manager {
 	cfg := config.GetConfig()
 
 	return &Manager{

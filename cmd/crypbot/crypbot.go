@@ -10,12 +10,16 @@ import (
 	"time"
 
 	"github.com/nihadazimli/crypbot/internal/order"
-
-	"github.com/nihadazimli/crypbot/internal/exchange"
+	"github.com/nihadazimli/crypbot/internal/router"
+	"github.com/nihadazimli/crypbot/internal/strategy"
+	"github.com/nihadazimli/crypbot/internal/trader"
 
 	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/exchange/bybit"
+
+	"github.com/nihadazimli/crypbot/internal/model"
+
 	"github.com/nihadazimli/crypbot/internal/financial"
-	"github.com/nihadazimli/crypbot/internal/trader"
 )
 
 func main() {
@@ -33,18 +37,46 @@ func main() {
 		os.Exit(1)
 	}()
 
-	cfg := config.GetConfig()
+	marketEventsChan := make(chan model.MarketEvent)
+	marketClient := bybit.NewMarketDataClient()
+	financialEngine := financial.Start(ctx, marketClient, marketEventsChan)
+	eventRouter := router.NewRouter(ctx, marketEventsChan)
+	enabledStrategies := config.GetEnabledStrategies()
 
-	buyReady := make(chan string, len(cfg.Symbols)+1)
-	sellReady := make(chan string, len(cfg.Symbols)+1)
+	for strategyName := range enabledStrategies {
+		switch strategyName {
+		case "rsi":
+			rsiTradingClient, err := bybit.NewTradingClientForStrategy("rsi")
+			if err != nil {
+				log.Printf("Failed to start exchange for RSI. Err:%v", err)
+				return
+			}
+			rsiConfig, err := config.GetRSIConfig()
+			if err != nil {
+				log.Printf("Failed to load config for RSI. Err:%v", err)
+				return
+			}
+			rsiOrderManager := order.NewOrderManager(rsiTradingClient)
+			rsiTrader := trader.NewTrader(rsiTradingClient, financialEngine, rsiOrderManager)
 
-	bybit := exchange.NewBybitAdapter(ctx)
+			rsiEventsChan := make(chan model.MarketEvent, 5)
+			eventRouter.RegisterStrategy("rsi", rsiEventsChan)
 
-	fe := financial.Start(ctx, bybit, buyReady)
-	orderManager := order.NewOrderManager(bybit)
-	tc := trader.NewTrader(buyReady, sellReady, bybit, fe, orderManager)
-	go tc.ProcessBuySignal(ctx)
-	go tc.ProcessSellSignal(ctx)
+			rsiStrategy := strategy.NewRSIStrategy(rsiConfig.Credentials.SubAccountID, financialEngine, rsiTrader, rsiEventsChan)
 
+			go rsiStrategy.Start(ctx)
+			log.Println("RSI Strategy started successfully!")
+
+		case "bollinger":
+			_, err := bybit.NewTradingClientForStrategy("bollinger")
+			if err != nil {
+				log.Printf("Failed to start exchange for bolinger. Err:%v", err)
+				return
+			}
+			log.Printf("Not implemented yet!")
+		default:
+			log.Printf("Unknown strategy: %s", strategyName)
+		}
+	}
 	<-ctx.Done()
 }
