@@ -15,7 +15,7 @@ type Router struct {
 	inputChannel <-chan model.MarketEvent
 
 	// Registered strategy channels
-	strategies    map[string]chan<- model.MarketEvent
+	strategies    map[model.StrategyID]chan<- model.MarketEvent
 	strategiesMux sync.RWMutex
 
 	// Control
@@ -30,14 +30,14 @@ func NewRouter(parentCtx context.Context, inputChannel <-chan model.MarketEvent)
 
 	return &Router{
 		inputChannel: inputChannel,
-		strategies:   make(map[string]chan<- model.MarketEvent),
+		strategies:   make(map[model.StrategyID]chan<- model.MarketEvent),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
 }
 
 // RegisterStrategy registers a strategy to receive market events
-func (r *Router) RegisterStrategy(name string, channel chan<- model.MarketEvent) {
+func (r *Router) RegisterStrategy(name model.StrategyID, channel chan<- model.MarketEvent) {
 	r.strategiesMux.Lock()
 	defer r.strategiesMux.Unlock()
 
@@ -47,7 +47,7 @@ func (r *Router) RegisterStrategy(name string, channel chan<- model.MarketEvent)
 }
 
 // UnregisterStrategy removes a strategy from receiving market events
-func (r *Router) UnregisterStrategy(name string) {
+func (r *Router) UnregisterStrategy(name model.StrategyID) {
 	r.strategiesMux.Lock()
 	defer r.strategiesMux.Unlock()
 
@@ -103,22 +103,24 @@ func (r *Router) broadcastEvent(event model.MarketEvent) {
 		return
 	}
 
-	for name, strategyChannel := range r.strategies {
-		select {
-		case strategyChannel <- event:
-		default:
-			log.Printf("Signal Router: Warning - Strategy '%s' channel is full, dropping market event for symbol %s",
-				name, event.Symbol)
+	for strategyID, strategyChannel := range r.strategies {
+		if r.shouldRouteToStrategy(strategyID, event) {
+			select {
+			case strategyChannel <- event:
+			default:
+				log.Printf("Signal Router: Warning - Strategy '%s' channel is full, dropping market event for symbol %s",
+					strategyID, event.Symbol)
+			}
 		}
 	}
 }
 
 // GetRegisteredStrategies returns the names of all registered strategies
-func (r *Router) GetRegisteredStrategies() []string {
+func (r *Router) GetRegisteredStrategies() []model.StrategyID {
 	r.strategiesMux.RLock()
 	defer r.strategiesMux.RUnlock()
 
-	names := make([]string, 0, len(r.strategies))
+	names := make([]model.StrategyID, 0, len(r.strategies))
 	for name := range r.strategies {
 		names = append(names, name)
 	}
@@ -130,4 +132,15 @@ func (r *Router) GetStrategyCount() int {
 	r.strategiesMux.RLock()
 	defer r.strategiesMux.RUnlock()
 	return len(r.strategies)
+}
+
+func (r *Router) shouldRouteToStrategy(strategyID model.StrategyID, event model.MarketEvent) bool {
+	switch strategyID {
+	case model.StrategyRSI:
+		return event.IsClosed
+	case model.StrategyBollinger:
+		return true
+	default:
+		return event.IsClosed
+	}
 }

@@ -117,7 +117,7 @@ func (rs *RSIStrategy) handleMarketEvent(ctx context.Context, event model.Market
 
 	switch state {
 	case StateWatchingToBuy:
-		rs.evaluateKlineSignalToBuy(ctx, event)
+		go rs.evaluateKlineSignalToBuy(ctx, event)
 	case StateHolding:
 		if Symbol(event.Symbol) != rs.heldSymbol {
 			return
@@ -131,6 +131,7 @@ func (rs *RSIStrategy) handleMarketEvent(ctx context.Context, event model.Market
 }
 
 func (rs *RSIStrategy) evaluateKlineSignalToBuy(ctx context.Context, event model.MarketEvent) {
+	hasBuySignal := rs.hasSymbolBuySignal(event)
 	rs.cycleMutex.Lock()
 	defer rs.cycleMutex.Unlock()
 
@@ -147,7 +148,7 @@ func (rs *RSIStrategy) evaluateKlineSignalToBuy(ctx context.Context, event model
 
 	rs.processedCoinsInCycle[event.Symbol] = true
 
-	if rs.hasSymbolBuySignal(event) {
+	if hasBuySignal {
 		rs.buyTradeCandidateCoins[event.Symbol] = event.RSI
 		log.Printf("RSI Strategy: Buy candidate found - %s with RSI: %.2f\n", event.Symbol, event.RSI)
 	}

@@ -175,3 +175,22 @@ func (o OrderStatus) IsFinished() bool {
 		return false
 	}
 }
+
+type StrategyID string
+
+const (
+	StrategyRSI       StrategyID = "rsi"
+	StrategyBollinger StrategyID = "bollinger"
+	StrategyUnknown   StrategyID = "N/A"
+)
+
+func ParseStrategyID(strategy string) StrategyID {
+	switch strings.ToUpper(strategy) {
+	case "RSI":
+		return StrategyRSI
+	case "BOLLINGER":
+		return StrategyBollinger
+	default:
+		return StrategyUnknown
+	}
+}

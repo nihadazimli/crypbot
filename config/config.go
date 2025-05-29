@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nihadazimli/crypbot/internal/model"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -125,9 +127,9 @@ func GetBollingerConfig() (*BollingerConfig, error) {
 	return &config.Strategies.Bollinger, nil
 }
 
-func GetEnabledStrategies() map[string]interface{} {
+func GetEnabledStrategies() map[model.StrategyID]interface{} {
 	config := GetConfig()
-	enabled := make(map[string]interface{})
+	enabled := make(map[model.StrategyID]interface{})
 
 	strategiesValue := reflect.ValueOf(config.Strategies)
 	strategiesType := reflect.TypeOf(config.Strategies)
@@ -143,13 +145,12 @@ func GetEnabledStrategies() map[string]interface{} {
 
 		strategy := field.Interface()
 
-		// Use reflection to check if the strategy has an Enabled field
 		strategyValue := reflect.ValueOf(strategy)
 		if strategyValue.Kind() == reflect.Struct {
 			enabledField := strategyValue.FieldByName("Enabled")
 			if enabledField.IsValid() && enabledField.Kind() == reflect.Bool && enabledField.Bool() {
 				strategyName := strings.ToLower(fieldType.Name)
-				enabled[strategyName] = strategy
+				enabled[model.ParseStrategyID(strategyName)] = strategy
 				log.Printf("Found enabled strategy: %s", strategyName)
 			}
 		}

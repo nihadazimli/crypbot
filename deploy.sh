@@ -75,13 +75,6 @@ deploy_on_remote() {
 
         echo "🚀 Starting deployment on remote server..."
 
-        # Backup current version if exists
-        if [ -d "${PROJECT_NAME}" ]; then
-            echo "📦 Backing up current version..."
-            rm -rf ${PROJECT_NAME}_backup_\$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
-            cp -r ${PROJECT_NAME} ${PROJECT_NAME}_backup_\$(date +%Y%m%d_%H%M%S)
-        fi
-
         # Extract new version
         echo "📁 Extracting new version..."
         rm -rf ${PROJECT_NAME}
@@ -160,13 +153,6 @@ EOF
 }
 
 # Main deployment flow
-main() {
-    log "🚀 Starting deployment process..."
-
-    create_deployment_package
-    upload_to_server
-    deploy_on_remote
-    health_check
 # Main deployment flow
 main() {
     log "🚀 Starting deployment process..."
@@ -179,7 +165,7 @@ main() {
     # ✅ Start monitoring after successful deployment
     log "🔍 Starting container monitoring..."
     ssh ${REMOTE_HOST} << 'EOF'
-        cd /home/nihad/crypbot
+        cd /home/nihad/
 
         # Stop any existing monitoring
         pkill -f "docker events.*crypbot-container" 2>/dev/null || true
@@ -197,12 +183,6 @@ EOF
     log "📱 Telegram monitoring is active"
 }
 
-    # Cleanup local zip
-    rm -f ${PROJECT_NAME}.zip
-
-    log "🎉 Deployment completed successfully!"
-    log "🔗 Your application is running on the remote server"
-}
 
 # Check if SSH connection works
 log "Testing SSH connection..."

@@ -40,18 +40,18 @@ func newMarketDataClientInstance() *MarketClient {
 
 }
 
-func NewTradingClientForStrategy(strategyID string) (exchange.TradingClient, error) {
+func NewTradingClientForStrategy(strategyID model.StrategyID) (exchange.TradingClient, error) {
 	var credentials config.CredentialsConfig
 
 	switch strategyID {
-	case "rsi":
+	case model.StrategyRSI:
 		rsiConfig, err := config.GetRSIConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get RSI config: %w", err)
 		}
 		credentials = rsiConfig.Credentials
 
-	case "bollinger":
+	case model.StrategyBollinger:
 		bollingerConfig, err := config.GetBollingerConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get Bollinger config: %w", err)
@@ -65,7 +65,7 @@ func NewTradingClientForStrategy(strategyID string) (exchange.TradingClient, err
 	return newTradingClient(strategyID, credentials), nil
 }
 
-func newTradingClient(strategyID string, credentials config.CredentialsConfig) *TradingClient {
+func newTradingClient(strategyID model.StrategyID, credentials config.CredentialsConfig) *TradingClient {
 	cfg := config.GetConfig()
 
 	tc := &TradingClient{

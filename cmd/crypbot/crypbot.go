@@ -36,17 +36,20 @@ func main() {
 		log.Println("Forcing exit after timeout")
 		os.Exit(1)
 	}()
+	cfg := config.GetConfig()
 
-	marketEventsChan := make(chan model.MarketEvent)
-	marketClient := bybit.NewMarketDataClient()
-	financialEngine := financial.Start(ctx, marketClient, marketEventsChan)
+	marketEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
 	eventRouter := router.NewRouter(ctx, marketEventsChan)
+	eventRouter.Start(ctx)
+
+	marketClient := bybit.NewMarketDataClient()
+	financialEngine := financial.NewFinancialEngine(marketClient, marketEventsChan)
 	enabledStrategies := config.GetEnabledStrategies()
 
 	for strategyName := range enabledStrategies {
 		switch strategyName {
-		case "rsi":
-			rsiTradingClient, err := bybit.NewTradingClientForStrategy("rsi")
+		case model.StrategyRSI:
+			rsiTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyRSI)
 			if err != nil {
 				log.Printf("Failed to start exchange for RSI. Err:%v", err)
 				return
@@ -59,8 +62,8 @@ func main() {
 			rsiOrderManager := order.NewOrderManager(rsiTradingClient)
 			rsiTrader := trader.NewTrader(rsiTradingClient, financialEngine, rsiOrderManager)
 
-			rsiEventsChan := make(chan model.MarketEvent, 5)
-			eventRouter.RegisterStrategy("rsi", rsiEventsChan)
+			rsiEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
+			eventRouter.RegisterStrategy(model.StrategyRSI, rsiEventsChan)
 
 			rsiStrategy := strategy.NewRSIStrategy(
 				rsiConfig.Credentials.SubAccountID,
@@ -72,7 +75,7 @@ func main() {
 			go rsiStrategy.Start(ctx)
 			log.Println("RSI Strategy started successfully!")
 
-		case "bollinger":
+		case model.StrategyBollinger:
 			_, err := bybit.NewTradingClientForStrategy("bollinger")
 			if err != nil {
 				log.Printf("Failed to start exchange for bolinger. Err:%v", err)
@@ -83,5 +86,6 @@ func main() {
 			log.Printf("Unknown strategy: %s", strategyName)
 		}
 	}
+	financialEngine.Start(ctx)
 	<-ctx.Done()
 }

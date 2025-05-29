@@ -125,7 +125,7 @@ const (
 )
 
 type TradingClient struct {
-	strategyID            string
+	strategyID            model.StrategyID
 	BybitClient           *bybit.Client
 	cfg                   *config.Config
 	orderWebsocket        *websocket.Client

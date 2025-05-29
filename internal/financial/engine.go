@@ -54,43 +54,27 @@ func (fe *Engine) GetMovingAverages(symbol string) (model.MovingAverage, error) 
 
 // NewFinancialEngine creates a new Engine instance with specified channels and HTTP client timeout.
 func NewFinancialEngine(
-	cfg *config.Config,
 	exchange exchange.MarketDataClient,
-	klineReceived chan model.WSInternalKline,
 	marketEventsChan chan<- model.MarketEvent,
-	httpTimeout time.Duration,
-	maCacheTTL time.Duration,
 ) *Engine {
+	cfg := config.GetConfig()
+	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
+
 	return &Engine{
-		httpClient:       &http.Client{Timeout: httpTimeout},
+		httpClient:       &http.Client{Timeout: cfg.Exchange.API.Timeout},
 		cfg:              cfg,
 		Coins:            make(map[string]*model.CoinMetrics),
 		maCache:          make(map[string]*MACache),
-		maCacheTTL:       maCacheTTL,
-		klineReceived:    klineReceived,
+		maCacheTTL:       maCacheTimeout,
+		klineReceived:    make(chan model.WSInternalKline),
 		marketEventsChan: marketEventsChan,
 		exchange:         exchange,
 	}
 }
 
-func Start(
+func (fe *Engine) Start(
 	ctx context.Context,
-	exchangeInstance exchange.MarketDataClient,
-	marketEventsChan chan<- model.MarketEvent,
 ) *Engine {
-	cfg := config.GetConfig()
-	klineReceived := make(chan model.WSInternalKline)
-	maCacheTimeout := time.Duration(cfg.MarketConstants.ClosePriceMAInterval) * time.Minute
-
-	fe := NewFinancialEngine(
-		cfg,
-		exchangeInstance,
-		klineReceived,
-		marketEventsChan,
-		cfg.Exchange.API.Timeout,
-		maCacheTimeout,
-	)
-
 	err := fe.loadRecentKlineData(ctx, fe.cfg.Symbols)
 	if err != nil {
 		log.Printf("Cannot load recent data successfully. Err: %v\n", err)
@@ -115,6 +99,7 @@ func (fe *Engine) processKline() {
 		} else {
 			fe.processLiveKline(klineDatapoint)
 		}
+		fe.sendMarketEvent(klineDatapoint)
 	}
 }
 
@@ -166,9 +151,6 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 		return
 	}
 	mapMutex.Unlock()
-
-	fe.sendMarketEvent(klineDatapoint)
-
 }
 
 func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
