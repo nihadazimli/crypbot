@@ -230,7 +230,7 @@ func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
 
 func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 	if len(rs.buyTradeCandidateCoins) == 0 {
-		log.Printf("RSI Strategy: No buy candidates in this cycle\n")
+		//log.Printf("RSI Strategy: No buy candidates in this cycle\n")
 		return
 	}
 	rs.stateMutex.Lock()
@@ -340,7 +340,7 @@ func (rs *RSIStrategy) resetCycle() {
 		rs.cycleTimer.Stop()
 		rs.cycleTimer = nil
 	}
-	log.Printf("RSI Strategy: Cycle reset\n")
+	//log.Printf("RSI Strategy: Cycle reset\n")
 }
 
 func (rs *RSIStrategy) handleCycleTimeout(ctx context.Context) {
