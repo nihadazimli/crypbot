@@ -1,0 +1,76 @@
+package config
+
+import (
+	"fmt"
+	"time"
+)
+
+type CredentialsConfig struct {
+	APIKey       string `yaml:"api_key"`
+	APISecret    string `yaml:"api_secret"`
+	SubAccountID string `yaml:"sub_account_id,omitempty"`
+}
+type CommonTraderConfig struct {
+	OrderCheckInterval    time.Duration `yaml:"order_check_interval"`
+	BalanceToLeave        float64       `yaml:"balance_to_leave"`
+	StopLossRatio         float64       `yaml:"stop_loss_ratio"`
+	MedianVolumeThreshold float64       `yaml:"median_volume_threshold"`
+}
+
+type RSIConfig struct {
+	Enabled     bool              `yaml:"enabled"`
+	Credentials CredentialsConfig `yaml:"credentials"`
+	Trader      RSITraderConfig   `yaml:"trader"`
+}
+
+type RSITraderConfig struct {
+	CommonTraderConfig `yaml:",inline"`
+
+	// RSI-specific parameters
+	BuyThreshold  float64 `yaml:"buy_threshold"`
+	SellThreshold float64 `yaml:"sell_threshold"`
+}
+
+func (r RSITraderConfig) Validate() error {
+	if r.OrderCheckInterval < time.Second {
+		return fmt.Errorf("order_check_interval too short: %v", r.OrderCheckInterval)
+	}
+	if r.BuyThreshold <= 0 || r.BuyThreshold >= 100 {
+		return fmt.Errorf("buy_threshold must be between 0 and 100")
+	}
+	if r.SellThreshold <= 0 || r.SellThreshold >= 100 {
+		return fmt.Errorf("sell_threshold must be between 0 and 100")
+	}
+	if r.BuyThreshold >= r.SellThreshold {
+		return fmt.Errorf("buy_threshold must be less than sell_threshold")
+	}
+	return nil
+}
+
+type BollingerConfig struct {
+	SubAccountID string                `yaml:"sub_account_id"` // Note: different field name
+	Enabled      bool                  `yaml:"enabled"`
+	Credentials  CredentialsConfig     `yaml:"credentials"`
+	Trader       BollingerTraderConfig `yaml:"trader"`
+}
+
+type BollingerTraderConfig struct {
+	CommonTraderConfig `yaml:",inline"`
+
+	// Bollinger-specific parameters
+	BuyThreshold  float64 `yaml:"buy_threshold"`
+	SellThreshold float64 `yaml:"sell_threshold"`
+}
+
+func (b BollingerTraderConfig) Validate() error {
+	if b.OrderCheckInterval < time.Second {
+		return fmt.Errorf("order_check_interval too short: %v", b.OrderCheckInterval)
+	}
+	if b.BuyThreshold <= 0 {
+		return fmt.Errorf("buy_threshold must be positive")
+	}
+	if b.SellThreshold <= 0 {
+		return fmt.Errorf("sell_threshold must be positive")
+	}
+	return nil
+}

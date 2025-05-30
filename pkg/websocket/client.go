@@ -25,7 +25,7 @@ type Client struct {
 	apiSecret    string
 	handler      MessageHandler
 	isConnected  bool
-	pingInterval int
+	pingInterval time.Duration
 	isPrivate    bool
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -36,7 +36,7 @@ type MessageHandler func(message []byte) error
 
 func NewWebSocketClientPublic(
 	url string,
-	pingInterval int,
+	pingInterval time.Duration,
 	handler MessageHandler,
 ) *Client {
 
@@ -54,7 +54,7 @@ func NewWebSocketClientPrivate(
 	url string,
 	apiKey string,
 	apiSecret string,
-	pingInterval int,
+	pingInterval time.Duration,
 	handler MessageHandler,
 ) *Client {
 
@@ -101,7 +101,7 @@ func (c *Client) ConnectAndStart(ctx context.Context, topics []string) error {
 }
 
 func (c *Client) monitorConnection(ctx context.Context, topics []string) {
-	ticker := time.NewTicker(time.Second * time.Duration(c.pingInterval))
+	ticker := time.NewTicker(c.pingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -192,8 +192,8 @@ func (c *Client) readPump() {
 	}
 }
 
-func (c *Client) keepAlive(pingInterval int) {
-	ticker := time.NewTicker(time.Second * time.Duration(pingInterval))
+func (c *Client) keepAlive(pingInterval time.Duration) {
+	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 
 	for {

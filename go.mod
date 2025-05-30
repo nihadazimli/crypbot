@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/stretchr/testify v1.9.0
 	github.com/wuhewuhe/bybit.go.api v1.0.4
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -19,5 +19,4 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

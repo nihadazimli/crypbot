@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nihadazimli/crypbot/internal/model"
+
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/financial"
 
@@ -41,6 +43,36 @@ func (fe *MockFinancialEngine) GetRSILive(symbol string) (float64, bool) {
 type MockExchange struct {
 	mock.Mock
 	exchange.Exchange
+}
+
+func (b *MockExchange) GetRSIClosed(symbol string) (float64, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *MockExchange) GetRSILive(symbol string) (float64, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *MockExchange) GetVolumeValueMedian(symbol string) (float64, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *MockExchange) GetCurrentPrice(symbol string) (float64, bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *MockExchange) GetMovingAverages(symbol string) (model.MovingAverage, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *MockExchange) Show() {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (b *MockExchange) GetAccountBalance(ctx context.Context) (float64, error) {

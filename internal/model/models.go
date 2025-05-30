@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -51,10 +52,19 @@ type WSKlineData struct {
 
 // WSInternalKline is filtered kline data from websocket to internal logic for processing
 type WSInternalKline struct {
-	Symbol  string
-	Close   float64
-	Confirm bool
-	Volume  float64
+	Symbol   string
+	Close    float64
+	IsClosed bool
+	Volume   float64
+}
+
+type MarketEvent struct {
+	Symbol    string
+	Price     float64
+	Volume    float64
+	RSI       float64
+	IsClosed  bool
+	Timestamp float64
 }
 
 type KlineApiResponse struct {
@@ -84,6 +94,7 @@ type MovingAverage struct {
 	MA100 float64
 	MA50  float64
 }
+type ConditionChecker func(ctx context.Context, symbol string) OrderConditionResult
 
 type OrderType string
 
@@ -91,6 +102,14 @@ const (
 	OrderTypeMarket  OrderType = "Market"
 	OrderTypeLimit   OrderType = "Limit"
 	OrderTypeUnknown OrderType = "N/A"
+)
+
+type OrderConditionResult int
+
+const (
+	ConditionMet OrderConditionResult = iota
+	ConditionWait
+	ConditionCancel
 )
 
 func ParseOrderType(orderType string) OrderType {
@@ -154,5 +173,24 @@ func (o OrderStatus) IsFinished() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+type StrategyID string
+
+const (
+	StrategyRSI       StrategyID = "rsi"
+	StrategyBollinger StrategyID = "bollinger"
+	StrategyUnknown   StrategyID = "N/A"
+)
+
+func ParseStrategyID(strategy string) StrategyID {
+	switch strings.ToUpper(strategy) {
+	case "RSI":
+		return StrategyRSI
+	case "BOLLINGER":
+		return StrategyBollinger
+	default:
+		return StrategyUnknown
 	}
 }
