@@ -585,7 +585,9 @@ func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) erro
 	}
 
 	if coinBalance.UsdValue > 1 {
-		if success := tc.executeSellOrder(ctx, symbol); success {
+		if success := tc.executeSellOrder(ctx, symbol, func(ctx context.Context, symbol string) model.OrderConditionResult {
+			return model.ConditionMet
+		}); success {
 			log.Printf("Successfully executed sell order for %s\n", symbol)
 		} else {
 			log.Printf("Failed to execute sell order for %s\n", symbol)

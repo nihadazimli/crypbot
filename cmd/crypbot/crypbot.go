@@ -70,6 +70,7 @@ func main() {
 				financialEngine,
 				rsiTrader,
 				rsiEventsChan,
+				cfg.Symbols,
 			)
 
 			go rsiStrategy.Start(ctx)
