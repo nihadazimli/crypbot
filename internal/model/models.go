@@ -65,6 +65,7 @@ type MarketEvent struct {
 	RSI       float64
 	IsClosed  bool
 	Timestamp float64
+	ZScore20  float64
 }
 
 type KlineApiResponse struct {
@@ -83,6 +84,7 @@ type CoinMetrics struct {
 	RSIClosed         float64
 	RSILive           float64
 	VolumeValueMedian float64
+	ZScore20          float64
 }
 
 type Precision struct {

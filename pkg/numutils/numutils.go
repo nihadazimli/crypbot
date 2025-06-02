@@ -91,7 +91,7 @@ func FindMedian(values []float64) float64 {
 	return (sortedValues[midpoint-1] + sortedValues[midpoint]) / 2
 }
 
-func CalculateRSI(prices []float64, n int) float64 {
+func RSI(prices []float64, n int) float64 {
 	if len(prices) < n+1 {
 		return 0 // Not enough data to compute RSI
 	}
@@ -150,7 +150,21 @@ func StandardDeviation(values []float64, period int) float64 {
 	for _, v := range data {
 		variance += math.Pow(v-mean, 2)
 	}
-	variance /= float64(len(data))
+	variance /= float64(len(data) - 1)
 
 	return math.Sqrt(variance)
+}
+
+func ZScore(prices []float64, period int) float64 {
+	if len(prices) < period {
+		return 0
+	}
+
+	sd := StandardDeviation(prices, period)
+	if sd == 0 {
+		return 0
+	}
+
+	zScore := (prices[len(prices)-1] - MovingAverage(prices, period)) / sd
+	return zScore
 }

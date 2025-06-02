@@ -65,6 +65,7 @@ type MarketConstantsConfig struct {
 	ClosePriceMAInterval      int           `yaml:"close_price_ma_interval"`
 	ClosePriceMA100WindowSize int           `yaml:"close_price_ma100_window_size"`
 	ClosePriceMA50WindowSize  int           `yaml:"close_price_ma50_window_size"`
+	ZScorePeriod              int           `yaml:"z_score_period"`
 }
 
 type TraderConfig struct {

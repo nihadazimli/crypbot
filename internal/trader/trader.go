@@ -506,10 +506,6 @@ func (tc *Trader) getSellCheckIntervalDuration() time.Duration {
 	return tc.cfg.Trader.SellCheckInterval
 }
 
-func (tc *Trader) getRSISellValue() float64 {
-	return tc.cfg.Trader.RSISellValue
-}
-
 func (tc *Trader) getOrderBook(
 	ctx context.Context,
 	symbol string,
