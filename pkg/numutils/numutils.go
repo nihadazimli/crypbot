@@ -165,6 +165,7 @@ func ZScore(prices []float64, period int) float64 {
 		return 0
 	}
 
-	zScore := (prices[len(prices)-1] - MovingAverage(prices, period)) / sd
+	latestPrice := prices[len(prices)-1]
+	zScore := (latestPrice - MovingAverage(prices, period)) / sd
 	return zScore
 }

@@ -27,8 +27,9 @@ type RSITraderConfig struct {
 	CommonTraderConfig `yaml:",inline"`
 
 	// RSI-specific parameters
-	BuyThreshold  float64 `yaml:"buy_threshold"`
-	SellThreshold float64 `yaml:"sell_threshold"`
+	BuyThreshold           float64       `yaml:"buy_threshold"`
+	SellThreshold          float64       `yaml:"sell_threshold"`
+	CloseKlineCycleTimeout time.Duration `yaml:"close_kline_cycle_timeout"`
 }
 
 func (r RSITraderConfig) Validate() error {

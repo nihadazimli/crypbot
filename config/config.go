@@ -113,6 +113,21 @@ func GetRSIConfig() (*RSIConfig, error) {
 
 }
 
+func GetRSITraderConfig() (*RSITraderConfig, error) {
+	config := GetConfig()
+
+	if !config.Strategies.RSI.Enabled {
+		return nil, fmt.Errorf("RSI is not enabled")
+	}
+
+	if err := config.Strategies.RSI.Trader.Validate(); err != nil {
+		return nil, fmt.Errorf("RSI config validation failed: %w", err)
+	}
+
+	return &config.Strategies.RSI.Trader, nil
+
+}
+
 func GetBollingerConfig() (*BollingerConfig, error) {
 	config := GetConfig()
 

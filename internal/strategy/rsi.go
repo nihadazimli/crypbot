@@ -34,8 +34,8 @@ type FinancialService interface {
 }
 type RSIStrategy struct {
 	// Configuration
-	cfg          *config.Config
 	subAccountID string
+	rsiConfig    *config.RSITraderConfig
 
 	// Dependencies
 	financial    FinancialService
@@ -51,9 +51,9 @@ type RSIStrategy struct {
 	cycleMutex             sync.Mutex
 	cycleTimer             *time.Timer
 	cycleTimeout           time.Duration
-	expectedCoinCount      int
 	processedCoinsInCycle  map[string]bool    // Tracks processed coins in current cycle
 	buyTradeCandidateCoins map[string]float64 // Stores coins with buy signal with RSI value
+	symbols                []string
 
 	// Control
 	ctx    context.Context
@@ -65,20 +65,24 @@ func NewRSIStrategy(
 	financial FinancialService,
 	trader TraderService,
 	marketEvents <-chan model.MarketEvent,
+	symbols []string,
 ) *RSIStrategy {
-	cfg := config.GetConfig()
-
+	rsiConfig, err := config.GetRSITraderConfig()
+	if err != nil {
+		log.Printf("RSI Strategy - Cannot get rsi config, fix config file!")
+		return nil
+	}
 	return &RSIStrategy{
-		cfg:                    cfg,
+		rsiConfig:              rsiConfig,
 		subAccountID:           subAccountID,
 		financial:              financial,
 		trader:                 trader,
 		marketEvents:           marketEvents,
 		state:                  StateWatchingToBuy,
-		expectedCoinCount:      len(cfg.Symbols),
+		symbols:                symbols,
 		processedCoinsInCycle:  make(map[string]bool),
 		buyTradeCandidateCoins: make(map[string]float64),
-		cycleTimeout:           cfg.MarketConstants.CloseKlineTimeout,
+		cycleTimeout:           rsiConfig.CloseKlineCycleTimeout,
 	}
 }
 
@@ -153,7 +157,7 @@ func (rs *RSIStrategy) evaluateKlineSignalToBuy(ctx context.Context, event model
 		log.Printf("RSI Strategy: Buy candidate found - %s with RSI: %.2f\n", event.Symbol, event.RSI)
 	}
 
-	if len(rs.processedCoinsInCycle) >= rs.expectedCoinCount {
+	if len(rs.processedCoinsInCycle) >= len(rs.symbols) {
 		rs.selectAndSignal(ctx)
 		rs.resetCycle()
 	}
@@ -168,7 +172,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 	rs.stateMutex.RUnlock()
 
 	rsiClosed, ok := rs.financial.GetRSIClosed(event.Symbol)
-	if !ok || rsiClosed < rs.cfg.Trader.RSISellValue {
+	if !ok || rsiClosed < rs.rsiConfig.BuyThreshold {
 		return
 	}
 
@@ -199,7 +203,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 }
 
 func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
-	if event.RSI > rs.cfg.Trader.RSIBuyValue {
+	if event.RSI > rs.rsiConfig.BuyThreshold {
 		return false
 	}
 
@@ -209,7 +213,7 @@ func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
 		return false
 	}
 
-	if volumeMedian < rs.cfg.Trader.MedianVolumeThreshold {
+	if volumeMedian < rs.rsiConfig.MedianVolumeThreshold {
 		return false
 	}
 
@@ -311,20 +315,20 @@ func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) mo
 		return model.ConditionCancel
 	}
 
-	if rsiClosed > rs.cfg.Trader.RSIBuyValue {
+	if rsiClosed > rs.rsiConfig.BuyThreshold {
 		log.Printf("RSI Strategy -checkBuyConditions - RSIClose is bigger than threshold for %s\n", symbol)
 		return model.ConditionCancel
 	}
 
-	if volumeMedian < rs.cfg.Trader.MedianVolumeThreshold {
+	if volumeMedian < rs.rsiConfig.MedianVolumeThreshold {
 		log.Printf("RSI Strategy -checkBuyConditions - Median Volume below threshold for %s\n", symbol)
 		return model.ConditionCancel
 	}
 
-	if rsiLive > rs.cfg.Trader.RSIBuyValue {
+	if rsiLive > rs.rsiConfig.BuyThreshold {
 		log.Printf(
 			"RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n",
-			rs.cfg.Trader.RSIBuyValue,
+			rs.rsiConfig.BuyThreshold,
 			symbol,
 			rsiLive,
 		)
@@ -352,7 +356,7 @@ func (rs *RSIStrategy) handleCycleTimeout(ctx context.Context) {
 	defer rs.cycleMutex.Unlock()
 
 	var missingCoins []string
-	for _, symbol := range rs.cfg.Symbols {
+	for _, symbol := range rs.symbols {
 		if !rs.processedCoinsInCycle[symbol] {
 			missingCoins = append(missingCoins, symbol)
 		}
@@ -363,7 +367,7 @@ func (rs *RSIStrategy) handleCycleTimeout(ctx context.Context) {
 	}
 
 	log.Printf("RSI Strategy: Cycle timeout reached. Processed %d out of %d coins\n",
-		len(rs.processedCoinsInCycle), rs.expectedCoinCount)
+		len(rs.processedCoinsInCycle), len(rs.symbols))
 
 	rs.selectAndSignal(ctx)
 	rs.resetCycle()

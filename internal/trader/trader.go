@@ -66,7 +66,12 @@ func (tc *Trader) ExecuteBuy(
 	return err
 }
 
-func (tc *Trader) ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error {
+func (tc *Trader) ExecuteSell(
+	ctx context.Context,
+	symbol string,
+	orderType model.OrderType,
+	checker model.ConditionChecker,
+) error {
 	var err error
 	if orderType == model.OrderTypeLimit {
 		success := tc.executeSellOrder(ctx, symbol, checker)

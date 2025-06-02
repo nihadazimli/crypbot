@@ -296,8 +296,14 @@ func (fe *Engine) Show() {
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
 			movingAvg := numutils.MovingAverage(metrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
-			BbUp := movingAvg + 2*numutils.StandardDeviation(metrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
-			BbDown := movingAvg - 2*numutils.StandardDeviation(metrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
+			BbUp := movingAvg + 2*numutils.StandardDeviation(
+				metrics.ClosePriceClosed,
+				fe.cfg.MarketConstants.ZScorePeriod,
+			)
+			BbDown := movingAvg - 2*numutils.StandardDeviation(
+				metrics.ClosePriceClosed,
+				fe.cfg.MarketConstants.ZScorePeriod,
+			)
 
 			log.Printf(
 				"Symbol: %s, ZScore: %v, RSIClosed: %v,RSILive: %v,BBUp: %v,BBDown:%v",

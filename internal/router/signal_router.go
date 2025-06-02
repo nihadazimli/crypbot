@@ -108,8 +108,11 @@ func (r *Router) broadcastEvent(event model.MarketEvent) {
 			select {
 			case strategyChannel <- event:
 			default:
-				log.Printf("Signal Router: Warning - Strategy '%s' channel is full, dropping market event for symbol %s",
-					strategyID, event.Symbol)
+				log.Printf(
+					"Signal Router: Warning - Strategy '%s' channel is full, dropping market event for symbol %s",
+					strategyID,
+					event.Symbol,
+				)
 			}
 		}
 	}
