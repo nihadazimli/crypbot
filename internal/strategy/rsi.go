@@ -23,7 +23,7 @@ type Symbol string
 
 type TraderService interface {
 	ExecuteBuy(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error
-	ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType) error
+	ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error
 }
 
 type FinancialService interface {
@@ -177,7 +177,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 	rs.state = StateInProgress
 	rs.stateMutex.Unlock()
 
-	err := rs.trader.ExecuteSell(ctx, event.Symbol, model.OrderTypeLimit)
+	err := rs.trader.ExecuteSell(ctx, event.Symbol, model.OrderTypeLimit, rs.checkSellConditions)
 	rs.stateMutex.Lock()
 	if err != nil {
 		log.Printf("RSI Strategy: Sell execution failed for %s. Err: %v\n", event.Symbol, err)
@@ -274,6 +274,7 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 	//	log.Printf("RSI Strategy: Buy failed for %s. Error: %v\n", selectedSymbol, result.Error)
 	//}
 }
+
 func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) model.OrderConditionResult {
 	rsiLive, rsiOk := rs.financial.GetRSILive(symbol)
 	if !rsiOk {
@@ -333,6 +334,9 @@ func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) mo
 	return model.ConditionMet
 }
 
+func (rs *RSIStrategy) checkSellConditions(ctx context.Context, symbol string) model.OrderConditionResult {
+	return model.ConditionMet
+}
 func (rs *RSIStrategy) resetCycle() {
 	rs.processedCoinsInCycle = make(map[string]bool)
 	rs.buyTradeCandidateCoins = make(map[string]float64)

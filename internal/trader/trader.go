@@ -66,10 +66,10 @@ func (tc *Trader) ExecuteBuy(
 	return err
 }
 
-func (tc *Trader) ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType) error {
+func (tc *Trader) ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error {
 	var err error
 	if orderType == model.OrderTypeLimit {
-		success := tc.executeSellOrder(ctx, symbol)
+		success := tc.executeSellOrder(ctx, symbol, checker)
 		if success {
 			return nil
 		} else {
@@ -292,7 +292,7 @@ func (tc *Trader) createLimitOrder(ctx context.Context, symbol string, side mode
 
 }
 
-func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
+func (tc *Trader) executeSellOrder(ctx context.Context, symbol string, checker model.ConditionChecker) bool {
 	err := tc.exchange.CancelAllTPSLOrders(ctx, symbol)
 	if err != nil {
 		log.Printf(
@@ -335,6 +335,26 @@ func (tc *Trader) executeSellOrder(ctx context.Context, symbol string) bool {
 			} else if currOrder.Status == model.OrderPartiallyFilled {
 				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
 			}
+
+			condition := checker(ctx, symbol)
+
+			if condition == model.ConditionWait {
+				continue
+			} else if condition == model.ConditionCancel {
+				err = tc.order.Cancel(ctx, currOrder.ID)
+				if err != nil {
+					log.Printf("executeSellOrder - cannot cancel conditions failed order. Err:%v", err)
+					return false
+				}
+				err = tc.gracefullyFinishOrder(ctx, symbol)
+				if err != nil {
+					log.Printf("executeSellOrder - %v", err)
+					return false
+				}
+				return true
+			}
+			// Code continues to here only when model.ConditionMet is returned from checker
+
 			updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 			currOrder, err = tc.updateLimitOrder(updateCtx, symbol, currOrder.ID, model.OrderSideSell)
 			updateCancel()
