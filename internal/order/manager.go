@@ -176,6 +176,7 @@ func (m *Manager) GetById(ctx context.Context, orderID string) (*Order, error) {
 		ID:           orderID,
 		Symbol:       order.Symbol,
 		Price:        order.Price,
+		AvgPrice:     order.AvgPrice,
 		Side:         order.Side,
 		Type:         order.Type,
 		Status:       order.Status,

@@ -21,17 +21,6 @@ const (
 
 type Symbol string
 
-type TraderService interface {
-	ExecuteBuy(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error
-	ExecuteSell(ctx context.Context, symbol string, orderType model.OrderType, checker model.ConditionChecker) error
-}
-
-type FinancialService interface {
-	GetRSIClosed(symbol string) (float64, bool)
-	GetRSILive(symbol string) (float64, bool)
-	GetVolumeValueMedian(symbol string) (float64, bool)
-	GetMovingAverages(symbol string) (model.MovingAverage, error)
-}
 type RSIStrategy struct {
 	// Configuration
 	subAccountID string
@@ -280,58 +269,23 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 }
 
 func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) model.OrderConditionResult {
-	rsiLive, rsiOk := rs.financial.GetRSILive(symbol)
-	if !rsiOk {
-		log.Printf("RSI Strategy -checkBuyConditions - No RSI closed data available for %s\n", symbol)
-		// QUESTION: Should I send construct signal to financial for missing coins? Isn't it coupling these 2 packages?
-		return model.ConditionCancel
-	}
-
-	rsiClosed, rsiOk := rs.financial.GetRSIClosed(symbol)
-	if !rsiOk {
-		log.Printf("RSI Strategy -checkBuyConditions - No RSI live data available for %s\n", symbol)
-		return model.ConditionCancel
-	}
-
+	rsiLive, rsiLiveOk := rs.financial.GetRSILive(symbol)
+	rsiClosed, rsiClosedOk := rs.financial.GetRSIClosed(symbol)
 	volumeMedian, volumeOk := rs.financial.GetVolumeValueMedian(symbol)
-	if !volumeOk {
-		log.Printf("RSI Strategy -checkBuyConditions - No volume data available for %s\n", symbol)
+	movingAverages, maErr := rs.financial.GetMovingAverages(symbol)
+
+	if !rsiLiveOk || !rsiClosedOk || !volumeOk || maErr != nil {
+		log.Printf("RSI Strategy: Insufficient data for %s", symbol)
 		return model.ConditionCancel
 	}
 
-	movingAverages, err := rs.financial.GetMovingAverages(symbol)
-	if err != nil {
-		log.Printf("RSI Strategy -checkBuyConditions - Could not retrieve MA - Err: %s\n", err)
-		return model.ConditionCancel
-	}
-
-	if movingAverages.MA50 < movingAverages.MA100 {
-		log.Printf(
-			"RSI Strategy -checkBuyConditions - MA short (%.2f) is smaller than MA long (%.2f) for %s\n",
-			movingAverages.MA50,
-			movingAverages.MA100,
-			symbol,
-		)
-		return model.ConditionCancel
-	}
-
-	if rsiClosed > rs.rsiConfig.BuyThreshold {
-		log.Printf("RSI Strategy -checkBuyConditions - RSIClose is bigger than threshold for %s\n", symbol)
-		return model.ConditionCancel
-	}
-
-	if volumeMedian < rs.rsiConfig.MedianVolumeThreshold {
-		log.Printf("RSI Strategy -checkBuyConditions - Median Volume below threshold for %s\n", symbol)
+	if rsiClosed > rs.rsiConfig.BuyThreshold ||
+		volumeMedian < rs.rsiConfig.MedianVolumeThreshold ||
+		movingAverages.MA50 < movingAverages.MA100 {
 		return model.ConditionCancel
 	}
 
 	if rsiLive > rs.rsiConfig.BuyThreshold {
-		log.Printf(
-			"RSI live is bigger than threshold value of %v for %s. RSI Live:%.2f\n",
-			rs.rsiConfig.BuyThreshold,
-			symbol,
-			rsiLive,
-		)
 		return model.ConditionWait
 	}
 

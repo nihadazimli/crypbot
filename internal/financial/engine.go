@@ -88,7 +88,7 @@ func (fe *Engine) Start(
 		log.Printf("Cannot start KlineStream. Err: %v\n", err)
 	}
 	go fe.processKline()
-	go fe.Show()
+	//go fe.Show()
 	log.Printf("Financial Engine initialized successfully for all %v symbols!\n", len(fe.cfg.Symbols))
 	return fe
 }
@@ -176,9 +176,8 @@ func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 		Timestamp: float64(time.Now().Unix()),
 	}
 
-	if marketEvent.IsClosed {
-		log.Printf("%s: RSI: %v,Volume:%v,Price:%v, ZScore:%v",
-			marketEvent.Symbol, marketEvent.RSI, marketEvent.Volume, marketEvent.Price, marketEvent.ZScore20)
+	if marketEvent.ZScore20 <= -4.0 {
+		log.Printf("Financial Engine: Buy opportunity for Bollinger Strategy. Event:%+v", marketEvent)
 	}
 	select {
 	case fe.marketEventsChan <- marketEvent:

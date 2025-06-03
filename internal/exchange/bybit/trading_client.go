@@ -24,6 +24,7 @@ type OrderInfoResult struct {
 	List []struct {
 		OrderId     string  `json:"orderId"`
 		Price       float64 `json:"price,string"`
+		AvgPrice    float64 `json:"avgPrice,string"`
 		Qty         float64 `json:"qty,string"`
 		LeavesQty   float64 `json:"leavesQty,string"`
 		Symbol      string  `json:"symbol"`
@@ -45,6 +46,7 @@ type ActiveOrderTracker struct {
 	Status       model.OrderStatus
 	Symbol       string
 	Price        float64
+	AvgPrice     float64
 	Type         model.OrderType
 	RemainingQty float64
 	Qty          float64
@@ -57,6 +59,7 @@ type ActiveOrderTracker struct {
 type OrderInfo struct {
 	OrderId   string
 	Price     float64
+	AvgPrice  float64
 	Qty       float64
 	LeavesQty float64
 	Symbol    string
@@ -592,6 +595,7 @@ func (tc *TradingClient) GetOrderStatus(
 			Status:       order.Status,
 			Side:         order.Side,
 			Price:        order.Price,
+			AvgPrice:     order.AvgPrice,
 			Type:         order.Type,
 			RemainingQty: order.RemainingQty,
 			Qty:          order.Qty,
@@ -612,6 +616,7 @@ func (tc *TradingClient) GetOrderStatus(
 		CreatedAt:    orderFromApi.CreatedAt,
 		UpdatedAt:    orderFromApi.UpdatedAt,
 		Price:        orderFromApi.Price,
+		AvgPrice:     orderFromApi.AvgPrice,
 		Type:         orderFromApi.Type,
 		Side:         orderFromApi.Side,
 		LastUpdated:  time.Now(),
@@ -621,6 +626,7 @@ func (tc *TradingClient) GetOrderStatus(
 		Symbol:       orderFromApi.Symbol,
 		OrderId:      orderFromApi.OrderId,
 		Price:        orderFromApi.Price,
+		AvgPrice:     orderFromApi.AvgPrice,
 		Type:         orderFromApi.Type,
 		Status:       orderFromApi.Status,
 		Side:         orderFromApi.Side,
@@ -889,6 +895,7 @@ func (tc *TradingClient) parseOrderResponse(
 				OrderId:   entry.OrderId,
 				Symbol:    entry.Symbol,
 				Price:     entry.Price,
+				AvgPrice:  entry.AvgPrice,
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
 				Status:    orderStatus,
