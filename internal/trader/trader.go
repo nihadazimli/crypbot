@@ -54,16 +54,19 @@ func NewTrader(
 
 func (tc *Trader) GetBalance(ctx context.Context) (*strategy.BalanceInfo, error) {
 	accountBalance, err := tc.exchange.GetAccountBalance(ctx)
-
 	if err != nil {
 		return nil, fmt.Errorf("GetBalance - %v", err)
 	}
 
+	availableForTrading := accountBalance.Total - tc.cfg.BalanceToLeave
+	if availableForTrading < 0 {
+		availableForTrading = 0
+	}
+
 	return &strategy.BalanceInfo{
 		TotalBalance:     accountBalance.Total,
-		AvailableBalance: accountBalance.Total,
+		AvailableBalance: availableForTrading,
 	}, nil
-
 }
 
 func (tc *Trader) GetSymbolBalance(ctx context.Context, symbol string) (*strategy.PositionBalance, error) {
