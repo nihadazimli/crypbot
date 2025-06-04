@@ -28,22 +28,17 @@ type PositionBalance struct {
 
 type TraderService interface {
 	// Common methods
-	ExecuteBuy(
+	ExecuteOrder(
 		ctx context.Context,
 		symbol string,
 		orderType model.OrderType,
-		checker model.ConditionChecker,
-	) (*ExecutionResult, error)
-	ExecuteSell(
-		ctx context.Context,
-		symbol string,
-		orderType model.OrderType,
+		side model.OrderSide,
 		checker model.ConditionChecker,
 	) (*ExecutionResult, error)
 
 	// Bollinger methods
-	GetBalance(ctx context.Context) (*BalanceInfo, error)
-	GetSymbolBalance(ctx context.Context, symbol string) (*PositionBalance, error)
+	//GetBalance(ctx context.Context) (*BalanceInfo, error)
+	//GetSymbolBalance(ctx context.Context, symbol string) (*PositionBalance, error)
 }
 
 type FinancialService interface {
