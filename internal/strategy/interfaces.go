@@ -24,6 +24,7 @@ type BalanceInfo struct {
 type PositionBalance struct {
 	Symbol        string
 	TotalQuantity float64
+	UsdValue      float64
 }
 
 type TraderService interface {

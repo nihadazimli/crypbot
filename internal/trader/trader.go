@@ -52,6 +52,33 @@ func NewTrader(
 	}
 }
 
+func (tc *Trader) GetBalance(ctx context.Context) (*strategy.BalanceInfo, error) {
+	accountBalance, err := tc.exchange.GetAccountBalance(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("GetBalance - %v", err)
+	}
+
+	return &strategy.BalanceInfo{
+		TotalBalance:     accountBalance.Total,
+		AvailableBalance: accountBalance.Total,
+	}, nil
+
+}
+
+func (tc *Trader) GetSymbolBalance(ctx context.Context, symbol string) (*strategy.PositionBalance, error) {
+	symbolBalance, err := tc.exchange.GetSymbolBalance(ctx, symbol)
+	if err != nil {
+		return nil, fmt.Errorf("GetSymbolBalance - %v", err)
+	}
+	return &strategy.PositionBalance{
+		Symbol:        symbol,
+		TotalQuantity: symbolBalance.WalletBalance,
+		UsdValue:      symbolBalance.UsdValue,
+	}, nil
+
+}
+
 func (tc *Trader) ExecuteOrder(
 	ctx context.Context,
 	symbol string,
