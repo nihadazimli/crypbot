@@ -60,7 +60,12 @@ func main() {
 				return
 			}
 			rsiOrderManager := order.NewOrderManager(rsiTradingClient)
-			rsiTrader := trader.NewTrader(rsiTradingClient, financialEngine, rsiOrderManager)
+			rsiTrader := trader.NewTrader(
+				&rsiConfig.Trader.CommonTraderConfig,
+				rsiTradingClient,
+				financialEngine,
+				rsiOrderManager,
+			)
 
 			rsiEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
 			eventRouter.RegisterStrategy(model.StrategyRSI, rsiEventsChan)

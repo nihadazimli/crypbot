@@ -32,19 +32,18 @@ type FinancialService interface {
 }
 
 type Trader struct {
-	cfg       *config.Config
+	cfg       *config.CommonTraderConfig
 	exchange  exchange.TradingClient
 	order     order.OrderManager
 	financial FinancialService
 }
 
 func NewTrader(
+	cfg *config.CommonTraderConfig,
 	market exchange.TradingClient,
 	financial FinancialService,
 	order order.OrderManager,
 ) *Trader {
-	cfg := config.GetConfig()
-
 	return &Trader{
 		cfg:       cfg,
 		exchange:  market,
@@ -53,15 +52,16 @@ func NewTrader(
 	}
 }
 
-func (tc *Trader) ExecuteBuy(
+func (tc *Trader) ExecuteOrder(
 	ctx context.Context,
 	symbol string,
 	orderType model.OrderType,
+	side model.OrderSide,
 	checker model.ConditionChecker,
 ) (*strategy.ExecutionResult, error) {
 	switch orderType {
 	case model.OrderTypeLimit:
-		return tc.placeBuyOrderAndMonitor(ctx, symbol, checker)
+		return tc.placeOrderAndMonitor(ctx, symbol, side, checker)
 	case model.OrderTypeMarket:
 		return nil, fmt.Errorf("market order not implemented for %s", symbol)
 	default:
@@ -69,235 +69,297 @@ func (tc *Trader) ExecuteBuy(
 	}
 }
 
-func (tc *Trader) ExecuteSell(
+func (tc *Trader) placeOrderAndMonitor(
 	ctx context.Context,
 	symbol string,
-	orderType model.OrderType,
-	checker model.ConditionChecker,
-) error {
-	var err error
-	if orderType == model.OrderTypeLimit {
-		success := tc.executeSellOrder(ctx, symbol, checker)
-		if success {
-			return nil
-		} else {
-			return fmt.Errorf("can't finish selling")
-		}
-	} else if orderType == model.OrderTypeMarket {
-		log.Printf("Market order is not implemented yet")
-	}
-	return err
-}
-
-func (tc *Trader) placeBuyOrderAndMonitor(
-	ctx context.Context,
-	symbol string,
+	side model.OrderSide,
 	checker model.ConditionChecker,
 ) (*strategy.ExecutionResult, error) {
+	if side == model.OrderSideSell {
+		err := tc.exchange.CancelAllTPSLOrders(ctx, symbol)
+		if err != nil {
+			log.Printf(
+				"placeOrderAndMonitor -  cannot cancel TPSL order for %s Err:%v",
+				symbol,
+				err,
+			)
+		}
+	}
 	createCtx, createCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	createdOrder, err := tc.createLimitOrder(createCtx, symbol, model.OrderSideBuy)
+	createdOrder, err := tc.createLimitOrder(createCtx, symbol, side)
 	createCancel()
 	if err != nil {
-		return nil, fmt.Errorf("placeBuyOrderAndMonitor - %w", err)
+		return nil, fmt.Errorf("placeOrderAndMonitor - %w", err)
 	}
 
-	log.Printf("Buy order placed successfully. Order Params: %+v\n", createdOrder)
+	log.Printf("%s order placed successfully for %s. Order: %+v", side, symbol, createdOrder)
 
-	ticker := time.NewTicker(tc.getBuyCheckIntervalDuration())
+	ticker := time.NewTicker(tc.getOrderCheckInterval())
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			latestCtx, cancel := context.WithTimeout(context.Background(), tc.cfg.Exchange.API.Timeout)
-			latestOrder, err := tc.order.GetById(latestCtx, createdOrder.ID)
-			cancel()
-
-			orderToCancel := createdOrder
-			if err == nil {
-				orderToCancel = latestOrder // Use latest data if available
-			}
-
-			execResult := &strategy.ExecutionResult{
-				Symbol:       symbol,
-				RequestedQty: orderToCancel.Quantity,
-				FilledQty:    orderToCancel.FilledQty,
-				AvgPrice:     orderToCancel.AvgPrice,
-			}
-
-			cancelCtx, cancelCancel := context.WithTimeout(context.Background(), tc.cfg.Exchange.API.Timeout)
-			cancelErr := tc.order.Cancel(cancelCtx, orderToCancel.ID)
-			cancelCancel()
-
-			if cancelErr != nil {
-				execResult.Status = model.OrderInvalid
-				return execResult, fmt.Errorf("context cancelled and failed to cancel order %s: %v", symbol, cancelErr)
-			}
-			execResult.Status = model.OrderCanceled
-			return execResult, fmt.Errorf("context cancelled while monitoring buy for %s", symbol)
+			return tc.handleContextCancellation(symbol, createdOrder)
 		case <-ticker.C:
-			createdOrder, err = tc.order.GetById(ctx, createdOrder.ID)
-			if err != nil {
-				return &strategy.ExecutionResult{
-						Symbol:       symbol,
-						Status:       model.OrderInvalid,
-						RequestedQty: createdOrder.Quantity,
-						FilledQty:    0,
-						AvgPrice:     0,
-					}, fmt.Errorf(
-						"monitorBuyOrder - not found order id %s. Err: %v",
-						createdOrder.ID,
-						err,
-					)
-			}
-
-			switch createdOrder.Status {
-			case model.OrderFilled, model.OrderPartiallyFilledCancelled:
-				log.Printf("Order filled for %s\n", symbol)
-				return &strategy.ExecutionResult{
-					Symbol:       symbol,
-					Status:       createdOrder.Status,
-					RequestedQty: createdOrder.Quantity,
-					FilledQty:    createdOrder.FilledQty,
-					AvgPrice:     createdOrder.AvgPrice,
-				}, nil
-			case model.OrderOpen, model.OrderPartiallyFilled:
-				condition := checker(ctx, symbol)
-
-				switch condition {
-				case model.ConditionMet:
-					updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-					updatedOrder, err := tc.updateLimitOrder(updateCtx, symbol, createdOrder.ID, model.OrderSideBuy)
-					updateCancel()
-
-					if err != nil {
-						var oerr *order.Error
-						if errors.As(err, &oerr) {
-							switch oerr.Type {
-							case order.ErrInvalidParams:
-								execResult := &strategy.ExecutionResult{
-									Symbol:       symbol,
-									RequestedQty: createdOrder.Quantity,
-									FilledQty:    createdOrder.FilledQty,
-									AvgPrice:     createdOrder.AvgPrice,
-								}
-								err = tc.order.Cancel(ctx, updatedOrder.ID)
-								if err != nil {
-									execResult.Status = model.OrderInvalid
-									return execResult, fmt.Errorf(
-										"monitor buy order - cannot cancel low qty order. Err:%v",
-										err,
-									)
-								}
-								execResult.Status = model.OrderCanceled
-								log.Printf(
-									"Monitor buy order - order %s with status %s cancelled due to low remaining qty\n",
-									updatedOrder.ID, updatedOrder.Status,
-								)
-								return execResult, nil
-							case order.ErrOrderUnchangedParams:
-								continue
-							case order.ErrOrderAtFinalState:
-								log.Printf(
-									"Monitor buy order - Probably Filled order %s does not exist anymore\n",
-									oerr.OrderID,
-								)
-								continue
-							case order.ErrOrderNotFound:
-								execResult := &strategy.ExecutionResult{
-									Status:       model.OrderInvalid,
-									Symbol:       symbol,
-									RequestedQty: createdOrder.Quantity,
-									FilledQty:    createdOrder.FilledQty,
-									AvgPrice:     createdOrder.AvgPrice,
-								}
-								log.Printf(
-									"Monitor buy order - Order cannot be found. Weird! Order Id: %s,Error order id: %s err: %v\n",
-									createdOrder.ID,
-									oerr.OrderID,
-									oerr.Err,
-								)
-								gracefulErr := tc.gracefullyFinishOrder(ctx, symbol)
-								if gracefulErr != nil {
-									return execResult, fmt.Errorf("monitor buy order - %v", err)
-								}
-								return execResult, err
-							default:
-								execResult := &strategy.ExecutionResult{
-									Status:       model.OrderInvalid,
-									Symbol:       symbol,
-									RequestedQty: createdOrder.Quantity,
-									FilledQty:    createdOrder.FilledQty,
-									AvgPrice:     createdOrder.AvgPrice,
-								}
-								gracefulErr := tc.gracefullyFinishOrder(ctx, symbol)
-								if gracefulErr != nil {
-									return execResult, fmt.Errorf("monitor buy order - %v", err)
-								}
-								return execResult, fmt.Errorf(
-									"monitor buy order - Cannot Amend Order id %v. Unhandled err: %v",
-									updatedOrder.ID,
-									err,
-								)
-							}
-						} else {
-							if errors.Is(err, BuyDetailsErrCannotCalculate) {
-								log.Printf("Buy details can't be calculated. Err: %s\n", err)
-								continue
-							} else {
-								return nil, fmt.Errorf("error does not match order error. Err: %e", err)
-							}
-						}
-					}
-
-				case model.ConditionWait:
-					continue
-				case model.ConditionCancel:
-					execResult := &strategy.ExecutionResult{
-						Symbol:       symbol,
-						RequestedQty: createdOrder.Quantity,
-						FilledQty:    createdOrder.FilledQty,
-						AvgPrice:     createdOrder.AvgPrice,
-					}
-					err = tc.order.Cancel(ctx, createdOrder.ID)
-					if err != nil {
-						execResult.Status = model.OrderInvalid
-						return execResult, fmt.Errorf(
-							"monitor buy order - cannot cancel conditions failed order. Err:%v",
-							err,
-						)
-					}
-					err = tc.gracefullyFinishOrder(ctx, symbol)
-					if err != nil {
-						return execResult, fmt.Errorf("monitor buy order - %v", err)
-					}
-					execResult.Status = model.OrderCanceled
-					return execResult, nil
-				}
-
-			case model.OrderInvalid, model.OrderCanceled:
-				err = tc.gracefullyFinishOrder(ctx, symbol)
-				return &strategy.ExecutionResult{
-					Symbol:       symbol,
-					Status:       createdOrder.Status,
-					RequestedQty: createdOrder.Quantity,
-					FilledQty:    createdOrder.FilledQty,
-					AvgPrice:     createdOrder.AvgPrice,
-				}, err
-
-			default:
-				log.Printf("Order Status: %v This status is not handled\n", createdOrder)
-				err = tc.gracefullyFinishOrder(ctx, symbol)
-				return &strategy.ExecutionResult{
-					Symbol:       symbol,
-					Status:       createdOrder.Status,
-					RequestedQty: createdOrder.Quantity,
-					FilledQty:    createdOrder.FilledQty,
-					AvgPrice:     createdOrder.AvgPrice,
-				}, err
+			result, shouldContinue, err := tc.processOrderUpdate(ctx, symbol, side, createdOrder.ID, checker)
+			if !shouldContinue {
+				return result, err
 			}
 		}
 	}
+}
+
+func (tc *Trader) processOrderUpdate(
+	ctx context.Context,
+	symbol string,
+	side model.OrderSide,
+	orderID string,
+	checker model.ConditionChecker,
+) (*strategy.ExecutionResult, bool, error) {
+	currentOrder, err := tc.order.GetById(ctx, orderID)
+	if err != nil {
+		return &strategy.ExecutionResult{
+				Symbol:       symbol,
+				Status:       model.OrderInvalid,
+				Side:         side,
+				RequestedQty: 0,
+				FilledQty:    0,
+				AvgPrice:     0,
+			}, false, fmt.Errorf(
+				"monitorBuyOrder - not found order id %s. Err: %v",
+				orderID,
+				err,
+			)
+	}
+	switch currentOrder.Status {
+	case model.OrderFilled, model.OrderPartiallyFilledCancelled:
+		return tc.handleOrderFilled(symbol, side, currentOrder)
+
+	case model.OrderOpen, model.OrderPartiallyFilled:
+		return tc.handleOrderPending(ctx, symbol, side, currentOrder, checker)
+
+	case model.OrderInvalid, model.OrderCanceled:
+		err = tc.gracefullyFinishOrder(ctx, symbol)
+		return &strategy.ExecutionResult{
+			Symbol:       symbol,
+			Side:         side,
+			Status:       currentOrder.Status,
+			RequestedQty: currentOrder.Quantity,
+			FilledQty:    currentOrder.FilledQty,
+			AvgPrice:     currentOrder.AvgPrice,
+		}, false, err
+	default:
+		log.Printf("Order Status: %v This status is not handled\n", currentOrder.Status)
+		err = tc.gracefullyFinishOrder(ctx, symbol)
+		return &strategy.ExecutionResult{
+			Symbol:       symbol,
+			Status:       currentOrder.Status,
+			RequestedQty: currentOrder.Quantity,
+			FilledQty:    currentOrder.FilledQty,
+			AvgPrice:     currentOrder.AvgPrice,
+		}, false, err
+
+	}
+}
+
+func (tc *Trader) handleOrderFilled(
+	symbol string,
+	side model.OrderSide,
+	currentOrder *order.Order,
+) (*strategy.ExecutionResult, bool, error) {
+	log.Printf("Order filled for %s\n", symbol)
+	return &strategy.ExecutionResult{
+		Symbol:       symbol,
+		Side:         side,
+		Status:       currentOrder.Status,
+		RequestedQty: currentOrder.Quantity,
+		FilledQty:    currentOrder.FilledQty,
+		AvgPrice:     currentOrder.AvgPrice,
+	}, false, nil
+}
+
+func (tc *Trader) handleOrderPending(
+	ctx context.Context,
+	symbol string,
+	side model.OrderSide,
+	currentOrder *order.Order,
+	checker model.ConditionChecker,
+) (*strategy.ExecutionResult, bool, error) {
+	condition := checker(ctx, symbol)
+
+	switch condition {
+	case model.ConditionMet:
+		return tc.handleConditionMet(ctx, symbol, side, currentOrder)
+	case model.ConditionWait:
+		return nil, true, nil
+	case model.ConditionCancel:
+		return tc.handleConditionCancel(ctx, symbol, side, currentOrder)
+	default:
+		return &strategy.ExecutionResult{
+			Symbol: symbol,
+			Side:   side,
+			Status: model.OrderInvalid,
+		}, false, fmt.Errorf("unknown condition result for %s %s", side, symbol)
+	}
+}
+
+func (tc *Trader) handleConditionMet(
+	ctx context.Context,
+	symbol string,
+	side model.OrderSide,
+	currentOrder *order.Order,
+) (*strategy.ExecutionResult, bool, error) {
+	updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
+	updatedOrder, err := tc.updateLimitOrder(updateCtx, symbol, currentOrder.ID, side)
+	updateCancel()
+
+	if err != nil {
+		var oerr *order.Error
+		if errors.As(err, &oerr) {
+			switch oerr.Type {
+			case order.ErrInvalidParams:
+				execResult := &strategy.ExecutionResult{
+					Symbol:       symbol,
+					Side:         side,
+					RequestedQty: currentOrder.Quantity,
+					FilledQty:    currentOrder.FilledQty,
+					AvgPrice:     currentOrder.AvgPrice,
+				}
+				err = tc.order.Cancel(ctx, updatedOrder.ID)
+				if err != nil {
+					execResult.Status = model.OrderInvalid
+					return execResult, false, fmt.Errorf(
+						"monitor order - cannot cancel low qty order. Err:%v",
+						err,
+					)
+				}
+				execResult.Status = model.OrderCanceled
+				log.Printf(
+					"Monitor order - order %s with status %s cancelled due to low remaining qty\n",
+					updatedOrder.ID, updatedOrder.Status,
+				)
+				return execResult, false, err
+			case order.ErrOrderUnchangedParams:
+				return nil, true, nil
+			case order.ErrOrderAtFinalState:
+				log.Printf(
+					"Monitor order - Probably Filled order %s does not exist anymore\n",
+					oerr.OrderID,
+				)
+				return nil, true, nil
+			case order.ErrOrderNotFound:
+				execResult := &strategy.ExecutionResult{
+					Status:       model.OrderInvalid,
+					Side:         side,
+					Symbol:       symbol,
+					RequestedQty: currentOrder.Quantity,
+					FilledQty:    currentOrder.FilledQty,
+					AvgPrice:     currentOrder.AvgPrice,
+				}
+				log.Printf(
+					"Monitor order - Order cannot be found. Weird! Order Id: %s,Error order id: %s err: %v\n",
+					currentOrder.ID,
+					oerr.OrderID,
+					oerr.Err,
+				)
+				gracefulErr := tc.gracefullyFinishOrder(ctx, symbol)
+				if gracefulErr != nil {
+					return execResult, false, fmt.Errorf("monitor order - %v", err)
+				}
+				return execResult, false, err
+			default:
+				execResult := &strategy.ExecutionResult{
+					Status:       model.OrderInvalid,
+					Side:         side,
+					Symbol:       symbol,
+					RequestedQty: currentOrder.Quantity,
+					FilledQty:    currentOrder.FilledQty,
+					AvgPrice:     currentOrder.AvgPrice,
+				}
+				gracefulErr := tc.gracefullyFinishOrder(ctx, symbol)
+				if gracefulErr != nil {
+					return execResult, false, fmt.Errorf("monitor order - %v", err)
+				}
+				return execResult, false, fmt.Errorf(
+					"monitor order - Cannot Amend Order id %v. Unhandled err: %v",
+					updatedOrder.ID,
+					err,
+				)
+			}
+		} else {
+			if errors.Is(err, BuyDetailsErrCannotCalculate) || errors.Is(err, SellDetailsErrCannotCalculate) {
+				log.Printf("Order details can't be calculated. Err: %s\n", err)
+				return nil, true, nil
+			} else {
+				return nil, false, fmt.Errorf("error does not match order error. Err: %e", err)
+			}
+		}
+
+	}
+	return nil, true, nil
+}
+
+func (tc *Trader) handleConditionCancel(
+	ctx context.Context,
+	symbol string,
+	side model.OrderSide,
+	currentOrder *order.Order,
+) (*strategy.ExecutionResult, bool, error) {
+	execResult := &strategy.ExecutionResult{
+		Symbol:       symbol,
+		Side:         side,
+		RequestedQty: currentOrder.Quantity,
+		FilledQty:    currentOrder.FilledQty,
+		AvgPrice:     currentOrder.AvgPrice,
+	}
+	err := tc.order.Cancel(ctx, currentOrder.ID)
+	if err != nil {
+		execResult.Status = model.OrderInvalid
+		return execResult, false, fmt.Errorf(
+			"monitor buy order - cannot cancel conditions failed order. Err:%v",
+			err,
+		)
+	}
+	err = tc.gracefullyFinishOrder(ctx, symbol)
+	if err != nil {
+		return execResult, false, fmt.Errorf("monitor buy order - %v", err)
+	}
+	execResult.Status = model.OrderCanceled
+	return execResult, false, err
+}
+
+func (tc *Trader) handleContextCancellation(
+	symbol string,
+	createdOrder *order.Order,
+) (*strategy.ExecutionResult, error) {
+	latestCtx, cancel := context.WithTimeout(context.Background(), tc.getAPITimeoutDuration())
+	latestOrder, err := tc.order.GetById(latestCtx, createdOrder.ID)
+	cancel()
+
+	orderToCancel := createdOrder
+	if err == nil {
+		orderToCancel = latestOrder // Use latest data if available
+	}
+
+	execResult := &strategy.ExecutionResult{
+		Symbol:       symbol,
+		Side:         createdOrder.Side,
+		RequestedQty: orderToCancel.Quantity,
+		FilledQty:    orderToCancel.FilledQty,
+		AvgPrice:     orderToCancel.AvgPrice,
+	}
+
+	cancelCtx, cancelCancel := context.WithTimeout(context.Background(), tc.getAPITimeoutDuration())
+	cancelErr := tc.order.Cancel(cancelCtx, orderToCancel.ID)
+	cancelCancel()
+
+	if cancelErr != nil {
+		execResult.Status = model.OrderInvalid
+		return execResult, fmt.Errorf("context cancelled and failed to cancel order %s: %v", symbol, cancelErr)
+	}
+	execResult.Status = model.OrderCanceled
+	return execResult, fmt.Errorf("context cancelled while monitoring buy for %s", symbol)
 }
 
 func (tc *Trader) updateLimitOrder(
@@ -384,115 +446,6 @@ func (tc *Trader) createLimitOrder(ctx context.Context, symbol string, side mode
 
 }
 
-func (tc *Trader) executeSellOrder(ctx context.Context, symbol string, checker model.ConditionChecker) bool {
-	err := tc.exchange.CancelAllTPSLOrders(ctx, symbol)
-	if err != nil {
-		log.Printf(
-			"Trader - executeSellOrder - Cannot cancel order for %s Err:%v",
-			symbol,
-			err,
-		)
-	}
-	orderCtx, orderCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-	sellOrder, err := tc.createLimitOrder(orderCtx, symbol, model.OrderSideSell)
-	orderCancel()
-	if err != nil {
-		log.Printf("Trader - executeSellOrder - Can't place sell order for %s. error:%v\n", symbol, err)
-		return false
-	}
-
-	sellTicker := time.NewTicker(tc.getSellOrderCheckDuration())
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Trader - executeSellOrder - Stopping executing sell order")
-			return false
-		case <-sellTicker.C:
-			statusCtx, statusCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-			currOrder, err := tc.order.GetById(statusCtx, sellOrder.ID)
-			statusCancel()
-
-			if err != nil {
-				log.Printf(
-					"Trader - executeSellOrder - Order not found for symbol %s. OrderId: %s\n",
-					symbol,
-					currOrder.ID,
-				)
-				return false
-			}
-
-			if currOrder.Status == model.OrderFilled {
-				log.Printf("Sell order filled for %s\n", symbol)
-				return true
-			} else if currOrder.Status == model.OrderPartiallyFilled {
-				log.Printf("Remaining qty for %s is %v\n", symbol, currOrder.RemainingQty)
-			}
-
-			condition := checker(ctx, symbol)
-
-			if condition == model.ConditionWait {
-				continue
-			} else if condition == model.ConditionCancel {
-				err = tc.order.Cancel(ctx, currOrder.ID)
-				if err != nil {
-					log.Printf("executeSellOrder - cannot cancel conditions failed order. Err:%v", err)
-					return false
-				}
-				err = tc.gracefullyFinishOrder(ctx, symbol)
-				if err != nil {
-					log.Printf("executeSellOrder - %v", err)
-					return false
-				}
-				return true
-			}
-			// Code continues to here only when model.ConditionMet is returned from checker
-
-			updateCtx, updateCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
-			currOrder, err = tc.updateLimitOrder(updateCtx, symbol, currOrder.ID, model.OrderSideSell)
-			updateCancel()
-
-			if err != nil {
-				var oerr *order.Error
-				if errors.As(err, &oerr) {
-					switch oerr.Type {
-					case order.ErrOrderUnchangedParams:
-						continue
-					case order.ErrOrderAtFinalState:
-						log.Printf(
-							"Execute sell order - Probably Filled order %s does not exist anymore\n",
-							oerr.OrderID,
-						)
-						continue
-					case order.ErrOrderNotFound:
-						log.Printf("Execute sell order - Calling graceful sell for %s. Err: %v\n", symbol, err)
-						err = tc.gracefullyFinishOrder(ctx, symbol)
-						if err != nil {
-							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
-							return false
-						}
-						return true
-					default:
-						log.Printf("Execute sell order - Cannot Amend Order %s. Unhandled err: %v", sellOrder.ID, err)
-						err = tc.gracefullyFinishOrder(ctx, symbol)
-						if err != nil {
-							log.Printf("executeSellOrder - Graceful sell for %s could not start. Err:%v\n", symbol, err)
-						}
-						return false
-					}
-				} else {
-					if errors.Is(err, SellDetailsErrCannotCalculate) {
-						log.Printf("executeSellOrder -  %v\n", err)
-						continue
-					} else {
-						return false
-					}
-				}
-			}
-		}
-
-	}
-}
-
 func (tc *Trader) CalculateSellOrderDetails(
 	ctx context.Context,
 	symbol string,
@@ -567,7 +520,7 @@ func (tc *Trader) CalculateBuyOrderDetails(
 			err,
 		)
 	}
-	stopLimit := tc.cfg.Trader.StopLossRatio * currentPrice
+	stopLimit := tc.cfg.StopLossRatio * currentPrice
 
 	var limitPrice float64
 	var orderAmount float64
@@ -585,14 +538,14 @@ func (tc *Trader) CalculateBuyOrderDetails(
 			calcLimitPrice = numutils.RoundDownToPrecision(averagePrice, bestBidPrice)
 		}
 		limitPrice = calcLimitPrice
-		orderAmount = (accountBalance.Total - tc.cfg.Trader.BalanceToLeave) / calcLimitPrice
+		orderAmount = (accountBalance.Total - tc.cfg.BalanceToLeave) / calcLimitPrice
 		return OrderDetails{
 			Price:    limitPrice,
 			Quantity: orderAmount,
 			StopLoss: stopLimit,
 		}, nil
 	case model.OrderTypeMarket:
-		orderAmount = accountBalance.Total - tc.cfg.Trader.BalanceToLeave
+		orderAmount = accountBalance.Total - tc.cfg.BalanceToLeave
 		return OrderDetails{
 			Quantity: orderAmount,
 			StopLoss: stopLimit,
@@ -602,20 +555,12 @@ func (tc *Trader) CalculateBuyOrderDetails(
 	return OrderDetails{}, fmt.Errorf("incorrect order type")
 }
 
-func (tc *Trader) getSellOrderCheckDuration() time.Duration {
-	return tc.cfg.Trader.SellCheckInterval
-}
-
 func (tc *Trader) getAPITimeoutDuration() time.Duration {
-	return tc.cfg.Exchange.API.Timeout
+	return tc.cfg.APITimeoutDuration
 }
 
-func (tc *Trader) getBuyCheckIntervalDuration() time.Duration {
-	return tc.cfg.Trader.BuyCheckInterval
-}
-
-func (tc *Trader) getSellCheckIntervalDuration() time.Duration {
-	return tc.cfg.Trader.SellCheckInterval
+func (tc *Trader) getOrderCheckInterval() time.Duration {
+	return tc.cfg.OrderCheckInterval
 }
 
 func (tc *Trader) getOrderBook(
@@ -672,9 +617,9 @@ func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) erro
 	}
 
 	if coinBalance.UsdValue > 1 {
-		if success := tc.executeSellOrder(ctx, symbol, func(ctx context.Context, symbol string) model.OrderConditionResult {
+		if _, err := tc.ExecuteOrder(ctx, symbol, model.OrderTypeMarket, model.OrderSideSell, func(ctx context.Context, symbol string) model.OrderConditionResult {
 			return model.ConditionMet
-		}); success {
+		}); err == nil {
 			log.Printf("Successfully executed sell order for %s\n", symbol)
 		} else {
 			log.Printf("Failed to execute sell order for %s\n", symbol)

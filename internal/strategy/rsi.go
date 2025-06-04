@@ -161,7 +161,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 	rs.stateMutex.RUnlock()
 
 	rsiClosed, ok := rs.financial.GetRSIClosed(event.Symbol)
-	if !ok || rsiClosed < rs.rsiConfig.BuyThreshold {
+	if !ok || rsiClosed < rs.rsiConfig.SellThreshold {
 		return
 	}
 

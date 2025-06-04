@@ -8,6 +8,7 @@ import (
 
 type ExecutionResult struct {
 	Symbol       string
+	Side         model.OrderSide
 	Status       model.OrderStatus
 	RequestedQty float64
 	FilledQty    float64

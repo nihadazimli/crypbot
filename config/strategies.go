@@ -15,6 +15,7 @@ type CommonTraderConfig struct {
 	BalanceToLeave        float64       `yaml:"balance_to_leave"`
 	StopLossRatio         float64       `yaml:"stop_loss_ratio"`
 	MedianVolumeThreshold float64       `yaml:"median_volume_threshold"`
+	APITimeoutDuration    time.Duration `yaml:"api_timeout_duration"`
 }
 
 type RSIConfig struct {
