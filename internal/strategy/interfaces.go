@@ -37,8 +37,8 @@ type TraderService interface {
 	) (*ExecutionResult, error)
 
 	// Bollinger methods
-	//GetBalance(ctx context.Context) (*BalanceInfo, error)
-	//GetSymbolBalance(ctx context.Context, symbol string) (*PositionBalance, error)
+	GetBalance(ctx context.Context) (*BalanceInfo, error)
+	GetSymbolBalance(ctx context.Context, symbol string) (*PositionBalance, error)
 }
 
 type FinancialService interface {
