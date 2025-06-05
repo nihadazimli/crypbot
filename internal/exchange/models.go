@@ -117,8 +117,10 @@ type OrderStatusResponse struct {
 	Type         model.OrderType
 	Side         model.OrderSide
 	Price        float64
+	AvgPrice     float64
 	Qty          float64
 	RemainingQty float64
+	FilledQty    float64
 	UpdatedAt    time.Time
 	CreatedAt    time.Time
 }

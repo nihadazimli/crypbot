@@ -28,6 +28,7 @@ type Config struct {
 type StrategiesConfig struct {
 	RSI       RSIConfig       `yaml:"rsi"`
 	Bollinger BollingerConfig `yaml:"bollinger"`
+	Dummy     DummyConfig     `yaml:"dummy"`
 }
 
 type ExchangeConfig struct {
@@ -65,6 +66,7 @@ type MarketConstantsConfig struct {
 	ClosePriceMAInterval      int           `yaml:"close_price_ma_interval"`
 	ClosePriceMA100WindowSize int           `yaml:"close_price_ma100_window_size"`
 	ClosePriceMA50WindowSize  int           `yaml:"close_price_ma50_window_size"`
+	ZScorePeriod              int           `yaml:"z_score_period"`
 }
 
 type TraderConfig struct {
@@ -109,6 +111,30 @@ func GetRSIConfig() (*RSIConfig, error) {
 	}
 
 	return &config.Strategies.RSI, nil
+
+}
+
+func GetDummyConfig() (*DummyConfig, error) {
+	config := GetConfig()
+	if !config.Strategies.Dummy.Enabled {
+		return nil, fmt.Errorf("Dummy is not enabled")
+	}
+
+	return &config.Strategies.Dummy, nil
+}
+
+func GetRSITraderConfig() (*RSITraderConfig, error) {
+	config := GetConfig()
+
+	if !config.Strategies.RSI.Enabled {
+		return nil, fmt.Errorf("RSI is not enabled")
+	}
+
+	if err := config.Strategies.RSI.Trader.Validate(); err != nil {
+		return nil, fmt.Errorf("RSI config validation failed: %w", err)
+	}
+
+	return &config.Strategies.RSI.Trader, nil
 
 }
 

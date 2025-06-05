@@ -31,6 +31,7 @@ type Order struct {
 	Type         model.OrderType // Market/Limit
 	Status       model.OrderStatus
 	Price        float64
+	AvgPrice     float64
 	Quantity     float64
 	FilledQty    float64
 	RemainingQty float64

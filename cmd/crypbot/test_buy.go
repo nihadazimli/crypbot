@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nihadazimli/crypbot/internal/exchange"
+	"github.com/nihadazimli/crypbot/internal/exchange/bybit"
 	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/internal/order"
 )
@@ -31,7 +31,7 @@ func main() {
 		log.Println("Forcing exit after timeout")
 		os.Exit(1)
 	}()
-	bybitAdapter := exchange.NewBybitAdapter(ctx)
+	bybitAdapter, _ := bybit.NewTradingClientForStrategy(model.StrategyRSI)
 	orderManager := order.NewOrderManager(bybitAdapter)
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -87,11 +87,11 @@ func main() {
 			scanner.Scan()
 			orderID := scanner.Text()
 
-			order, err := orderManager.GetById(ctx, orderID)
+			currOrder, err := orderManager.GetById(ctx, orderID)
 			if err != nil {
 				log.Printf("Get failed: %v\n", err)
 			}
-			fmt.Printf("Order details: %+v\n", order)
+			fmt.Printf("Order details: %+v\n", currOrder)
 
 		case "update":
 			fmt.Print("Order ID: ")

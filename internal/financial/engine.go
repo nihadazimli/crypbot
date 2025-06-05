@@ -88,6 +88,7 @@ func (fe *Engine) Start(
 		log.Printf("Cannot start KlineStream. Err: %v\n", err)
 	}
 	go fe.processKline()
+	//go fe.Show()
 	log.Printf("Financial Engine initialized successfully for all %v symbols!\n", len(fe.cfg.Symbols))
 	return fe
 }
@@ -101,6 +102,13 @@ func (fe *Engine) processKline() {
 		}
 		fe.sendMarketEvent(klineDatapoint)
 	}
+}
+
+func (fe *Engine) GetZScore(symbol string) (float64, bool) {
+	if metrics, exists := fe.Coins[symbol]; exists {
+		return metrics.ZScore20, true
+	}
+	return fe.getDefaultMissingDataValue(), false
 }
 
 func (fe *Engine) GetRSIClosed(symbol string) (float64, bool) {
@@ -156,15 +164,21 @@ func (fe *Engine) processClosedKline(klineDatapoint model.WSInternalKline) {
 func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 	rsi, _ := fe.GetRSIClosed(klineDatapoint.Symbol)
 
+	zScore, _ := fe.GetZScore(klineDatapoint.Symbol)
+
 	marketEvent := model.MarketEvent{
 		Symbol:    klineDatapoint.Symbol,
 		Price:     klineDatapoint.Close,
 		Volume:    klineDatapoint.Volume,
 		RSI:       rsi,
+		ZScore20:  zScore,
 		IsClosed:  klineDatapoint.IsClosed,
 		Timestamp: float64(time.Now().Unix()),
 	}
 
+	if marketEvent.ZScore20 <= -4.0 {
+		log.Printf("Financial Engine: Buy opportunity for Bollinger Strategy. Event:%+v", marketEvent)
+	}
 	select {
 	case fe.marketEventsChan <- marketEvent:
 	default:
@@ -178,7 +192,8 @@ func (fe *Engine) processLiveKline(klineDatapoint model.WSInternalKline) {
 	if ok && len(coinMetrics.ClosePriceClosed) == fe.cfg.MarketConstants.MetricsWindowSize {
 		// Construct a dataset that includes the last MetricsWindowSize-1 closed prices and the live price
 		liveData := append(coinMetrics.ClosePriceClosed[1:], klineDatapoint.Close)
-		coinMetrics.RSILive = numutils.CalculateRSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+		coinMetrics.RSILive = numutils.RSI(liveData, fe.cfg.MarketConstants.KlineInterval-1)
+		coinMetrics.ZScore20 = numutils.ZScore(liveData, fe.cfg.MarketConstants.ZScorePeriod)
 	}
 }
 
@@ -210,7 +225,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 		return fmt.Errorf("insufficient or missing data to calculate RSI for %s", symbol)
 	}
 
-	rsi := numutils.CalculateRSI(
+	rsi := numutils.RSI(
 		coinMetrics.ClosePriceClosed,
 		fe.cfg.MarketConstants.KlineInterval-1,
 	) //To get only latest RSI
@@ -220,7 +235,10 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 		fe.cfg.MarketConstants.MetricsWindowSize,
 	)
 
+	zScore := numutils.ZScore(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
+
 	fe.Coins[symbol].RSIClosed = rsi
+	fe.Coins[symbol].ZScore20 = zScore
 	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
 
 	return nil
@@ -276,17 +294,28 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
+			movingAvg := numutils.MovingAverage(metrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
+			BbUp := movingAvg + 2*numutils.StandardDeviation(
+				metrics.ClosePriceClosed,
+				fe.cfg.MarketConstants.ZScorePeriod,
+			)
+			BbDown := movingAvg - 2*numutils.StandardDeviation(
+				metrics.ClosePriceClosed,
+				fe.cfg.MarketConstants.ZScorePeriod,
+			)
+
 			log.Printf(
-				"%s L: %.2f C: %.2f V: %.2f CP: %.2f\n",
+				"Symbol: %s, ZScore: %v, RSIClosed: %v,RSILive: %v,BBUp: %v,BBDown:%v",
 				symbol,
-				metrics.RSILive,
+				metrics.ZScore20,
 				metrics.RSIClosed,
-				metrics.VolumeValueMedian,
-				metrics.ClosePriceClosed[len(metrics.ClosePriceClosed)-1],
+				metrics.RSILive,
+				BbUp,
+				BbDown,
 			)
 		}
 
-		time.Sleep(10 * time.Second) // Update frequency; adjust as needed
+		time.Sleep(30 * time.Second) // Update frequency; adjust as needed
 	}
 }
 

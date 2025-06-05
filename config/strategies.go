@@ -15,6 +15,7 @@ type CommonTraderConfig struct {
 	BalanceToLeave        float64       `yaml:"balance_to_leave"`
 	StopLossRatio         float64       `yaml:"stop_loss_ratio"`
 	MedianVolumeThreshold float64       `yaml:"median_volume_threshold"`
+	APITimeoutDuration    time.Duration `yaml:"api_timeout_duration"`
 }
 
 type RSIConfig struct {
@@ -27,8 +28,9 @@ type RSITraderConfig struct {
 	CommonTraderConfig `yaml:",inline"`
 
 	// RSI-specific parameters
-	BuyThreshold  float64 `yaml:"buy_threshold"`
-	SellThreshold float64 `yaml:"sell_threshold"`
+	BuyThreshold           float64       `yaml:"buy_threshold"`
+	SellThreshold          float64       `yaml:"sell_threshold"`
+	CloseKlineCycleTimeout time.Duration `yaml:"close_kline_cycle_timeout"`
 }
 
 func (r RSITraderConfig) Validate() error {
@@ -73,4 +75,14 @@ func (b BollingerTraderConfig) Validate() error {
 		return fmt.Errorf("sell_threshold must be positive")
 	}
 	return nil
+}
+
+type DummyConfig struct {
+	Enabled     bool              `yaml:"enabled"`
+	Credentials CredentialsConfig `yaml:"credentials"`
+	Trader      DummyTraderConfig `yaml:"trader"`
+}
+
+type DummyTraderConfig struct {
+	CommonTraderConfig `yaml:",inline"`
 }
