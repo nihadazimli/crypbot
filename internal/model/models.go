@@ -25,7 +25,7 @@ type BybitWSPrivateMessage struct {
 type BybitWSOrderData struct {
 	OrderID     string  `json:"orderId"`
 	Qty         float64 `json:"qty,string"`
-	CumExecQty  string  `json:"cumExecQty"`
+	CumExecQty  float64 `json:"cumExecQty,string"`
 	Price       float64 `json:"price,string"`
 	Status      string  `json:"orderStatus"`
 	Symbol      string  `json:"symbol"`
@@ -183,6 +183,7 @@ type StrategyID string
 const (
 	StrategyRSI       StrategyID = "rsi"
 	StrategyBollinger StrategyID = "bollinger"
+	StrategyDummy     StrategyID = "dummy"
 	StrategyUnknown   StrategyID = "N/A"
 )
 
@@ -192,6 +193,8 @@ func ParseStrategyID(strategy string) StrategyID {
 		return StrategyRSI
 	case "BOLLINGER":
 		return StrategyBollinger
+	case "DUMMY":
+		return StrategyDummy
 	default:
 		return StrategyUnknown
 	}

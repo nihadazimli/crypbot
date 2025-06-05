@@ -27,6 +27,7 @@ type OrderInfoResult struct {
 		AvgPrice    float64 `json:"avgPrice,string"`
 		Qty         float64 `json:"qty,string"`
 		LeavesQty   float64 `json:"leavesQty,string"`
+		CumExecQty  float64 `json:"cumExecQty,string"`
 		Symbol      string  `json:"symbol"`
 		Status      string  `json:"orderStatus"`
 		Side        string  `json:"side"`
@@ -49,6 +50,7 @@ type ActiveOrderTracker struct {
 	AvgPrice     float64
 	Type         model.OrderType
 	RemainingQty float64
+	FilledQty    float64
 	Qty          float64
 	UpdatedAt    time.Time
 	CreatedAt    time.Time
@@ -62,6 +64,7 @@ type OrderInfo struct {
 	AvgPrice  float64
 	Qty       float64
 	LeavesQty float64
+	FilledQty float64
 	Symbol    string
 	Status    model.OrderStatus
 	Side      model.OrderSide
@@ -151,7 +154,7 @@ func (tc *TradingClient) GetAccountBalance(ctx context.Context) (exchange.Accoun
 		return exchange.AccountBalanceResult{}, err
 	}
 
-	totalAvailableBalance, err := strconv.ParseFloat(walletResult.List[0].TotalWalletBalance, 64)
+	totalAvailableBalance, err := parseFloatSafe(walletResult.List[0].TotalWalletBalance)
 
 	if err != nil {
 		return exchange.AccountBalanceResult{}, err
@@ -258,7 +261,7 @@ func (tc *TradingClient) PlaceBuyOrder(
 	}
 
 	if params.OrderType == model.OrderTypeLimit {
-		err := tc.followOrder(ctx, buyDetails.OrderId)
+		err := tc.followOrder(buyDetails.OrderId)
 
 		if err != nil {
 			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
@@ -418,7 +421,7 @@ func (tc *TradingClient) PlaceSellOrder(
 		)
 	}
 	if params.OrderType == model.OrderTypeLimit {
-		err := tc.followOrder(ctx, sellDetails.OrderId)
+		err := tc.followOrder(sellDetails.OrderId)
 		if err != nil {
 			log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 		}
@@ -575,7 +578,7 @@ func (tc *TradingClient) AmendOrder(
 	}
 	delete(tc.activeOrders, params.OrderId)
 
-	err = tc.followOrder(ctx, details.OrderId)
+	err = tc.followOrder(details.OrderId)
 	if err != nil {
 		log.Printf("PlaceBuyOrder - cannot connect to order websocket stream. Err:%v\n", err)
 	}
@@ -598,6 +601,7 @@ func (tc *TradingClient) GetOrderStatus(
 			AvgPrice:     order.AvgPrice,
 			Type:         order.Type,
 			RemainingQty: order.RemainingQty,
+			FilledQty:    order.FilledQty,
 			Qty:          order.Qty,
 			UpdatedAt:    order.UpdatedAt,
 			CreatedAt:    order.CreatedAt,
@@ -613,6 +617,7 @@ func (tc *TradingClient) GetOrderStatus(
 		Symbol:       orderFromApi.Symbol,
 		Status:       orderFromApi.Status,
 		RemainingQty: orderFromApi.LeavesQty,
+		FilledQty:    orderFromApi.FilledQty,
 		CreatedAt:    orderFromApi.CreatedAt,
 		UpdatedAt:    orderFromApi.UpdatedAt,
 		Price:        orderFromApi.Price,
@@ -632,8 +637,9 @@ func (tc *TradingClient) GetOrderStatus(
 		Side:         orderFromApi.Side,
 		CreatedAt:    orderFromApi.CreatedAt,
 		UpdatedAt:    orderFromApi.UpdatedAt,
-		RemainingQty: orderFromApi.LeavesQty,
 		Qty:          orderFromApi.Qty,
+		RemainingQty: orderFromApi.LeavesQty,
+		FilledQty:    orderFromApi.FilledQty,
 	}, nil
 
 }
@@ -655,11 +661,11 @@ func (tc *TradingClient) GetSymbolBalance(ctx context.Context, symbol string) (e
 		return exchange.SymbolBalanceResult{}, fmt.Errorf("cannot get balance for coin %s", symbol)
 	}
 
-	totalSymbolBalance, err := strconv.ParseFloat(walletResult.List[0].Coin[0].WalletBalance, 64)
+	totalSymbolBalance, err := parseFloatSafe(walletResult.List[0].Coin[0].WalletBalance)
 	if err != nil {
 		return exchange.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
 	}
-	usdValue, err := strconv.ParseFloat(walletResult.List[0].Coin[0].UsdValue, 64)
+	usdValue, err := parseFloatSafe(walletResult.List[0].Coin[0].UsdValue)
 	if err != nil {
 		return exchange.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
 	}
@@ -708,9 +714,9 @@ func (tc *TradingClient) monitorActiveOrders(pollInterval time.Duration) {
 	}()
 }
 
-func (tc *TradingClient) followOrder(ctx context.Context, orderId string) error {
+func (tc *TradingClient) followOrder(orderId string) error {
 	if !tc.orderStreamSubscribed {
-		err := tc.subscribeToOrderStream(ctx)
+		err := tc.subscribeToOrderStream()
 		if err != nil {
 			return err
 		}
@@ -726,8 +732,8 @@ func (tc *TradingClient) unsubscribeFromOrderStream() error {
 	return nil
 }
 
-func (tc *TradingClient) subscribeToOrderStream(ctx context.Context) error {
-	err := tc.orderWebsocket.ConnectAndStart(ctx, []string{"order"})
+func (tc *TradingClient) subscribeToOrderStream() error {
+	err := tc.orderWebsocket.ConnectAndStart(context.Background(), []string{"order"})
 	if err != nil {
 		return err
 	}
@@ -799,6 +805,7 @@ func (tc *TradingClient) handleOrderMessage(data json.RawMessage) error {
 			Type:         model.ParseOrderType(order.Type),
 			Qty:          order.Qty,
 			RemainingQty: order.LeavesQty,
+			FilledQty:    order.CumExecQty,
 			LastUpdated:  time.Now(),
 		}
 
@@ -899,6 +906,7 @@ func (tc *TradingClient) parseOrderResponse(
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
 				Status:    orderStatus,
+				FilledQty: entry.CumExecQty,
 				Side:      model.ParseOrderSide(entry.Side),
 				CreatedAt: millisecondsToTime(entry.CreatedTime),
 				UpdatedAt: millisecondsToTime(entry.UpdatedTime),
@@ -983,6 +991,13 @@ func removeUSDTSuffix(symbol string) string {
 func parseOrderStatus(status string) (model.OrderStatus, bool) {
 	enumStatus, ok := orderStatusMap[status]
 	return enumStatus, ok
+}
+
+func parseFloatSafe(s string) (float64, error) {
+	if s == "" {
+		return 0.0, nil
+	}
+	return strconv.ParseFloat(s, 64)
 }
 
 // millisecondsToTime convert a timestamp in milliseconds into a Time object

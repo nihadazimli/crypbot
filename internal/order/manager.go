@@ -180,8 +180,9 @@ func (m *Manager) GetById(ctx context.Context, orderID string) (*Order, error) {
 		Side:         order.Side,
 		Type:         order.Type,
 		Status:       order.Status,
-		Quantity:     order.RemainingQty,
+		Quantity:     order.Qty,
 		RemainingQty: order.RemainingQty,
+		FilledQty:    order.FilledQty,
 		UpdatedAt:    order.UpdatedAt,
 		CreatedAt:    order.CreatedAt,
 	}, nil

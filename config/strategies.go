@@ -76,3 +76,13 @@ func (b BollingerTraderConfig) Validate() error {
 	}
 	return nil
 }
+
+type DummyConfig struct {
+	Enabled     bool              `yaml:"enabled"`
+	Credentials CredentialsConfig `yaml:"credentials"`
+	Trader      DummyTraderConfig `yaml:"trader"`
+}
+
+type DummyTraderConfig struct {
+	CommonTraderConfig `yaml:",inline"`
+}

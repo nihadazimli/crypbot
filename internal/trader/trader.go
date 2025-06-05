@@ -105,16 +105,6 @@ func (tc *Trader) placeOrderAndMonitor(
 	side model.OrderSide,
 	checker model.ConditionChecker,
 ) (*strategy.ExecutionResult, error) {
-	if side == model.OrderSideSell {
-		err := tc.exchange.CancelAllTPSLOrders(ctx, symbol)
-		if err != nil {
-			log.Printf(
-				"placeOrderAndMonitor -  cannot cancel TPSL order for %s Err:%v",
-				symbol,
-				err,
-			)
-		}
-	}
 	createCtx, createCancel := context.WithTimeout(ctx, tc.getAPITimeoutDuration())
 	createdOrder, err := tc.createLimitOrder(createCtx, symbol, side)
 	createCancel()

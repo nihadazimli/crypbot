@@ -57,6 +57,12 @@ func NewTradingClientForStrategy(strategyID model.StrategyID) (exchange.TradingC
 			return nil, fmt.Errorf("failed to get Bollinger config: %w", err)
 		}
 		credentials = bollingerConfig.Credentials
+	case model.StrategyDummy:
+		dummyConfig, err := config.GetDummyConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Dummy config: %w", err)
+		}
+		credentials = dummyConfig.Credentials
 
 	default:
 		return nil, fmt.Errorf("unknown strategy ID: %s", strategyID)

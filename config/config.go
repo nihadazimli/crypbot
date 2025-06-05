@@ -28,6 +28,7 @@ type Config struct {
 type StrategiesConfig struct {
 	RSI       RSIConfig       `yaml:"rsi"`
 	Bollinger BollingerConfig `yaml:"bollinger"`
+	Dummy     DummyConfig     `yaml:"dummy"`
 }
 
 type ExchangeConfig struct {
@@ -111,6 +112,15 @@ func GetRSIConfig() (*RSIConfig, error) {
 
 	return &config.Strategies.RSI, nil
 
+}
+
+func GetDummyConfig() (*DummyConfig, error) {
+	config := GetConfig()
+	if !config.Strategies.Dummy.Enabled {
+		return nil, fmt.Errorf("Dummy is not enabled")
+	}
+
+	return &config.Strategies.Dummy, nil
 }
 
 func GetRSITraderConfig() (*RSITraderConfig, error) {

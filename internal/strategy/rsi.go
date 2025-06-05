@@ -170,7 +170,13 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 	rs.state = StateInProgress
 	rs.stateMutex.Unlock()
 
-	err := rs.trader.ExecuteSell(ctx, event.Symbol, model.OrderTypeLimit, rs.checkSellConditions)
+	_, err := rs.trader.ExecuteOrder(
+		ctx,
+		event.Symbol,
+		model.OrderTypeLimit,
+		model.OrderSideSell,
+		rs.checkSellConditions,
+	)
 	rs.stateMutex.Lock()
 	if err != nil {
 		log.Printf("RSI Strategy: Sell execution failed for %s. Err: %v\n", event.Symbol, err)
@@ -244,7 +250,13 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 		rs.buyTradeCandidateCoins, selectedSymbol, minRsi)
 
 	// Execute buy order
-	err := rs.trader.ExecuteBuy(ctx, selectedSymbol, model.OrderTypeLimit, rs.checkBuyConditions)
+	_, err := rs.trader.ExecuteOrder(
+		ctx,
+		selectedSymbol,
+		model.OrderTypeLimit,
+		model.OrderSideBuy,
+		rs.checkBuyConditions,
+	)
 
 	rs.stateMutex.Lock()
 	if err != nil {

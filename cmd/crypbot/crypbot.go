@@ -88,6 +88,35 @@ func main() {
 				return
 			}
 			log.Printf("Not implemented yet!")
+		case model.StrategyDummy:
+			dummyTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyDummy)
+			if err != nil {
+				log.Printf("Failed to start exchange for Dummy. Err:%v", err)
+				return
+			}
+
+			dummyConfig, err := config.GetDummyConfig()
+			if err != nil {
+				log.Printf("Failed to load config for Dummy. Err:%v", err)
+				return
+			}
+
+			dummyOrderManager := order.NewOrderManager(dummyTradingClient)
+			dummyTrader := trader.NewTrader(
+				&dummyConfig.Trader.CommonTraderConfig,
+				dummyTradingClient,
+				financialEngine,
+				dummyOrderManager,
+			)
+
+			dummyStrategy := strategy.NewInteractiveDummyStrategy(dummyTrader, financialEngine, cfg.Symbols[0])
+			go func() {
+				err := dummyStrategy.Start(ctx)
+				if err != nil {
+					log.Printf("main - %v", err)
+				}
+			}()
+
 		default:
 			log.Printf("Unknown strategy: %s", strategyName)
 		}

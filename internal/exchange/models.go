@@ -120,6 +120,7 @@ type OrderStatusResponse struct {
 	AvgPrice     float64
 	Qty          float64
 	RemainingQty float64
+	FilledQty    float64
 	UpdatedAt    time.Time
 	CreatedAt    time.Time
 }
