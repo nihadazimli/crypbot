@@ -204,7 +204,7 @@ func (tc *Trader) handleOrderPending(
 	currentOrder *order.Order,
 	checker model.ConditionChecker,
 ) (*strategy.ExecutionResult, bool, error) {
-	condition := checker(ctx, symbol)
+	condition := checker(symbol)
 
 	switch condition {
 	case model.ConditionMet:
@@ -642,7 +642,7 @@ func (tc *Trader) gracefullyFinishOrder(ctx context.Context, symbol string) erro
 	}
 
 	if coinBalance.UsdValue > 1 {
-		if _, err := tc.ExecuteOrder(ctx, symbol, model.OrderTypeLimit, model.OrderSideSell, func(ctx context.Context, symbol string) model.OrderConditionResult {
+		if _, err := tc.ExecuteOrder(ctx, symbol, model.OrderTypeLimit, model.OrderSideSell, func(symbol string) model.OrderConditionResult {
 			return model.ConditionMet
 		}); err == nil {
 			log.Printf("Successfully executed sell order for %s\n", symbol)
