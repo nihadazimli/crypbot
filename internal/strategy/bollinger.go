@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 
 	"github.com/nihadazimli/crypbot/config"
@@ -13,11 +14,22 @@ import (
 type Position struct {
 	Symbol        string
 	TotalQuantity float64
+	TotalInvested float64
+	AvgPrice      float64
 	State         PositionState
 }
 
-func (p Position) addExecution(result *ExecutionResult) {
+func (p *Position) addExecution(result *ExecutionResult) {
+	executedValue := result.FilledQty * result.AvgPrice
+
+	// Update totals
 	p.TotalQuantity += result.FilledQty
+	p.TotalInvested += executedValue
+
+	// Recalculate average entry price
+	if p.TotalQuantity > 0 {
+		p.AvgPrice = p.TotalInvested / p.TotalQuantity
+	}
 }
 
 type PositionState int
@@ -50,13 +62,13 @@ func NewBollingerStrategy(
 ) (*BollingerStrategy, error) {
 	traderConfig, err := config.GetBollingerTraderConfig()
 	if err != nil {
-		log.Printf("Bollinger Strategy - Cannot get bollinger config, fix config file!")
+		log.Printf("Bollinger - Cannot get bollinger config, fix config file!")
 		return nil, err
 	}
 	balanceInfo, err := trader.GetBalance(context.Background())
 
 	if err != nil {
-		return nil, fmt.Errorf("Bollinger Strategy - can't fetch balance - %v", err)
+		return nil, fmt.Errorf("Bollinger - %v", err)
 	}
 
 	return &BollingerStrategy{
@@ -67,21 +79,24 @@ func NewBollingerStrategy(
 		marketEvents:     marketEvents,
 		positions:        make(map[string]*Position),
 		sellingPositions: make(map[string]bool),
-		minTradeAmount:   traderConfig.CommonTraderConfig.BalanceToLeave,
+		minTradeAmount:   traderConfig.MinTradeAmount,
 		availableBalance: balanceInfo.AvailableBalance,
 	}, nil
 }
 
-func (bs *BollingerStrategy) Start(ctx context.Context) {
-	log.Printf("Bollinger Strategy started for sub-account: %s\n", bs.subAccountID)
+func (bs *BollingerStrategy) Start(ctx context.Context) error {
+	log.Printf("Bollinger started for sub-account: %s\n", bs.subAccountID)
 
+	if bs.availableBalance < 0 {
+		return fmt.Errorf("invalid available balance: %.2f", bs.availableBalance)
+	}
 	for {
 		select {
 		case event := <-bs.marketEvents:
 			bs.handleMarketEvent(ctx, event)
 		case <-ctx.Done():
-			log.Printf("Bollinger Strategy stopping for sub-account: %s\n", bs.subAccountID)
-			return
+			log.Printf("Bollinger - stopping for sub-account: %s\n", bs.subAccountID)
+			return ctx.Err()
 		}
 	}
 }
@@ -117,7 +132,7 @@ func (bs *BollingerStrategy) executeBuySignal(ctx context.Context, event model.M
 	bs.stateMutex.Unlock()
 
 	log.Printf("Bollinger: starting buy for %s (Z=%.2f,price=%v balance=%.2f)",
-		event.Symbol, event.ZScore20, bs.availableBalance)
+		event.Symbol, event.ZScore20, event.Price, bs.availableBalance)
 
 	result, err := bs.trader.ExecuteOrder(
 		ctx,
@@ -167,21 +182,35 @@ func (bs *BollingerStrategy) checkIndicatorsForBuy(zScore float64, volume float6
 	if volume < bs.getVolumeThreshold() {
 		return model.ConditionCancel
 	}
+
+	bs.stateMutex.RLock()
+	hasBalance := bs.availableBalance >= bs.minTradeAmount
+	bs.stateMutex.RUnlock()
+
+	if !hasBalance {
+		return model.ConditionCancel
+	}
+
 	return model.ConditionMet
 
 }
 
 func (bs *BollingerStrategy) onBuyCompleted(symbol string, result *ExecutionResult) {
+	executedValue := result.FilledQty * result.AvgPrice
+
 	bs.stateMutex.Lock()
-	bs.availableBalance -= result.FilledQty * result.AvgPrice
+	bs.availableBalance -= executedValue
+	newBalance := bs.availableBalance
 	bs.stateMutex.Unlock()
 
 	balance, err := bs.trader.GetBalance(context.Background())
 	if err != nil {
-		log.Printf("onBuyCompleted - Error while retrieveing balance")
+		log.Printf("onBuyCompleted - Error while retrieving balance")
 	}
 
-	if balance.AvailableBalance-bs.availableBalance > 1 {
+	if math.Abs(balance.AvailableBalance-bs.availableBalance) > bs.getBalanceVerificationThreshold() {
+		log.Printf("Bollinger: Balance drift detected, corrected from %.2f to %.2f",
+			bs.availableBalance, balance.AvailableBalance)
 		bs.stateMutex.Lock()
 		bs.availableBalance = balance.AvailableBalance
 		bs.stateMutex.Unlock()
@@ -194,14 +223,15 @@ func (bs *BollingerStrategy) onBuyCompleted(symbol string, result *ExecutionResu
 		bs.positions[symbol] = &Position{
 			Symbol:        symbol,
 			TotalQuantity: result.FilledQty,
+			TotalInvested: result.FilledQty * result.AvgPrice,
+			AvgPrice:      result.AvgPrice,
 			State:         PositionHolding,
 		}
 	}
 	bs.positionMutex.Unlock()
 
 	log.Printf("Bollinger: Buy completed for %s: %.6f @ %.4f (%.2f USDT), remaining: %.2f USDT",
-		symbol, result.FilledQty, result.AvgPrice,
-		result.FilledQty*result.AvgPrice, bs.availableBalance)
+		symbol, result.FilledQty, result.AvgPrice, executedValue, newBalance)
 
 }
 
@@ -211,4 +241,8 @@ func (bs *BollingerStrategy) getVolumeThreshold() float64 {
 
 func (bs *BollingerStrategy) getBuyThreshold() float64 {
 	return bs.traderConfig.BuyThreshold
+}
+
+func (bs *BollingerStrategy) getBalanceVerificationThreshold() float64 {
+	return bs.traderConfig.BalanceVerificationThreshold
 }
