@@ -206,14 +206,14 @@ func (bs *BollingerStrategy) onBuyCompleted(symbol string, result *ExecutionResu
 	balance, err := bs.trader.GetBalance(context.Background())
 	if err != nil {
 		log.Printf("onBuyCompleted - Error while retrieving balance")
-	}
-
-	if math.Abs(balance.AvailableBalance-bs.availableBalance) > bs.getBalanceVerificationThreshold() {
-		log.Printf("Bollinger: Balance drift detected, corrected from %.2f to %.2f",
-			bs.availableBalance, balance.AvailableBalance)
-		bs.stateMutex.Lock()
-		bs.availableBalance = balance.AvailableBalance
-		bs.stateMutex.Unlock()
+	} else {
+		if math.Abs(balance.AvailableBalance-bs.availableBalance) > bs.getBalanceVerificationThreshold() {
+			log.Printf("Bollinger: Balance drift detected, corrected from %.2f to %.2f",
+				bs.availableBalance, balance.AvailableBalance)
+			bs.stateMutex.Lock()
+			bs.availableBalance = balance.AvailableBalance
+			bs.stateMutex.Unlock()
+		}
 	}
 
 	bs.positionMutex.Lock()
