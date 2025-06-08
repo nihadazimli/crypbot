@@ -169,7 +169,6 @@ func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 	marketEvent := model.MarketEvent{
 		Symbol:    klineDatapoint.Symbol,
 		Price:     klineDatapoint.Close,
-		Volume:    klineDatapoint.Volume,
 		RSI:       rsi,
 		ZScore20:  zScore,
 		IsClosed:  klineDatapoint.IsClosed,

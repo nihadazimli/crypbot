@@ -115,7 +115,11 @@ func (bs *BollingerStrategy) handleBuySignal(ctx context.Context, event model.Ma
 		return
 	}
 
-	if bs.checkIndicatorsForBuy(event.ZScore20, event.Volume) == model.ConditionMet {
+	if event.ZScore20 > bs.getBuyThreshold() {
+		return //Should be smaller than threshold
+	}
+
+	if bs.buyConditionsChecker(event.Symbol) == model.ConditionMet {
 		go bs.executeBuySignal(ctx, event)
 	}
 }
@@ -153,7 +157,14 @@ func (bs *BollingerStrategy) executeBuySignal(ctx context.Context, event model.M
 
 }
 
-func (bs *BollingerStrategy) buyConditionsChecker(ctx context.Context, symbol string) model.OrderConditionResult {
+func (bs *BollingerStrategy) buyConditionsChecker(symbol string) model.OrderConditionResult {
+	bs.stateMutex.RLock()
+	hasBalance := bs.availableBalance >= bs.minTradeAmount
+	bs.stateMutex.RUnlock()
+
+	if !hasBalance {
+		return model.ConditionCancel
+	}
 
 	zScore, ok := bs.financial.GetZScore(symbol)
 	if !ok {
@@ -165,24 +176,10 @@ func (bs *BollingerStrategy) buyConditionsChecker(ctx context.Context, symbol st
 		log.Printf("Bollinger - can't retrieve volume for %s", symbol)
 		return model.ConditionCancel
 	}
-
-	return bs.checkIndicatorsForBuy(zScore, volume)
-
-}
-
-func (bs *BollingerStrategy) checkIndicatorsForBuy(zScore float64, volume float64) model.OrderConditionResult {
 	if zScore > bs.getBuyThreshold() {
 		return model.ConditionCancel
 	}
 	if volume < bs.getVolumeThreshold() {
-		return model.ConditionCancel
-	}
-
-	bs.stateMutex.RLock()
-	hasBalance := bs.availableBalance >= bs.minTradeAmount
-	bs.stateMutex.RUnlock()
-
-	if !hasBalance {
 		return model.ConditionCancel
 	}
 
@@ -286,7 +283,7 @@ func (bs *BollingerStrategy) executeSellSignal(ctx context.Context, event model.
 		bs.onSellCompleted(event.Symbol, result, currentPosition)
 	}
 }
-func (bs *BollingerStrategy) sellConditionsChecker(ctx context.Context, symbol string) model.OrderConditionResult {
+func (bs *BollingerStrategy) sellConditionsChecker(symbol string) model.OrderConditionResult {
 	return model.ConditionMet
 }
 

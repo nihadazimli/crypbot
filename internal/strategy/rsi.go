@@ -272,7 +272,7 @@ func (rs *RSIStrategy) selectAndSignal(ctx context.Context) {
 	//}
 }
 
-func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) model.OrderConditionResult {
+func (rs *RSIStrategy) checkBuyConditions(symbol string) model.OrderConditionResult {
 	rsiLive, rsiLiveOk := rs.financial.GetRSILive(symbol)
 	rsiClosed, rsiClosedOk := rs.financial.GetRSIClosed(symbol)
 	volumeMedian, volumeOk := rs.financial.GetVolumeValueMedian(symbol)
@@ -296,7 +296,7 @@ func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) mo
 	return model.ConditionMet
 }
 
-func (rs *RSIStrategy) checkSellConditions(ctx context.Context, symbol string) model.OrderConditionResult {
+func (rs *RSIStrategy) checkSellConditions(symbol string) model.OrderConditionResult {
 	return model.ConditionMet
 }
 func (rs *RSIStrategy) resetCycle() {
