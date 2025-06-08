@@ -175,9 +175,6 @@ func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 		Timestamp: float64(time.Now().Unix()),
 	}
 
-	if marketEvent.ZScore20 <= -4.0 {
-		log.Printf("Financial Engine: Buy opportunity for Bollinger Strategy. Event:%+v", marketEvent)
-	}
 	select {
 	case fe.marketEventsChan <- marketEvent:
 	default:
@@ -293,24 +290,13 @@ func (fe *Engine) Show() {
 		fmt.Print("\033[H\033[2J") // Move cursor to home and clear the screen
 		for _, symbol := range symbols {
 			metrics := fe.Coins[symbol]
-			movingAvg := numutils.MovingAverage(metrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
-			BbUp := movingAvg + 2*numutils.StandardDeviation(
-				metrics.ClosePriceClosed,
-				fe.cfg.MarketConstants.ZScorePeriod,
-			)
-			BbDown := movingAvg - 2*numutils.StandardDeviation(
-				metrics.ClosePriceClosed,
-				fe.cfg.MarketConstants.ZScorePeriod,
-			)
 
 			log.Printf(
-				"Symbol: %s, ZScore: %v, RSIClosed: %v,RSILive: %v,BBUp: %v,BBDown:%v",
+				"Symbol: %s, ZScore: %v, RSIClosed: %v,RSILive: %v",
 				symbol,
 				metrics.ZScore20,
 				metrics.RSIClosed,
 				metrics.RSILive,
-				BbUp,
-				BbDown,
 			)
 		}
 
