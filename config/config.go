@@ -98,6 +98,14 @@ func GetConfig() *Config {
 
 	return cfg
 }
+func GetDummyConfig() (*DummyConfig, error) {
+	config := GetConfig()
+	if !config.Strategies.Dummy.Enabled {
+		return nil, fmt.Errorf("Dummy is not enabled")
+	}
+
+	return &config.Strategies.Dummy, nil
+}
 
 func GetRSIConfig() (*RSIConfig, error) {
 	config := GetConfig()
@@ -112,15 +120,6 @@ func GetRSIConfig() (*RSIConfig, error) {
 
 	return &config.Strategies.RSI, nil
 
-}
-
-func GetDummyConfig() (*DummyConfig, error) {
-	config := GetConfig()
-	if !config.Strategies.Dummy.Enabled {
-		return nil, fmt.Errorf("Dummy is not enabled")
-	}
-
-	return &config.Strategies.Dummy, nil
 }
 
 func GetRSITraderConfig() (*RSITraderConfig, error) {
@@ -151,6 +150,21 @@ func GetBollingerConfig() (*BollingerConfig, error) {
 	}
 
 	return &config.Strategies.Bollinger, nil
+}
+
+func GetBollingerTraderConfig() (*BollingerTraderConfig, error) {
+	config := GetConfig()
+
+	if !config.Strategies.Bollinger.Enabled {
+		return nil, fmt.Errorf("Bollinger strategy is disabled")
+	}
+
+	// Validate the configuration
+	if err := config.Strategies.Bollinger.Trader.Validate(); err != nil {
+		return nil, fmt.Errorf("Bollinger config validation failed: %w", err)
+	}
+
+	return &config.Strategies.Bollinger.Trader, nil
 }
 
 func GetEnabledStrategies() map[model.StrategyID]interface{} {
