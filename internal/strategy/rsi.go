@@ -24,7 +24,7 @@ type Symbol string
 type RSIStrategy struct {
 	// Configuration
 	subAccountID string
-	rsiConfig    *config.RSITraderConfig
+	traderConfig *config.RSITraderConfig
 
 	// Dependencies
 	financial    FinancialService
@@ -43,10 +43,6 @@ type RSIStrategy struct {
 	processedCoinsInCycle  map[string]bool    // Tracks processed coins in current cycle
 	buyTradeCandidateCoins map[string]float64 // Stores coins with buy signal with RSI value
 	symbols                []string
-
-	// Control
-	ctx    context.Context
-	cancel context.CancelFunc
 }
 
 func NewRSIStrategy(
@@ -56,13 +52,13 @@ func NewRSIStrategy(
 	marketEvents <-chan model.MarketEvent,
 	symbols []string,
 ) *RSIStrategy {
-	rsiConfig, err := config.GetRSITraderConfig()
+	traderConfig, err := config.GetRSITraderConfig()
 	if err != nil {
 		log.Printf("RSI Strategy - Cannot get rsi config, fix config file!")
 		return nil
 	}
 	return &RSIStrategy{
-		rsiConfig:              rsiConfig,
+		traderConfig:           traderConfig,
 		subAccountID:           subAccountID,
 		financial:              financial,
 		trader:                 trader,
@@ -71,12 +67,11 @@ func NewRSIStrategy(
 		symbols:                symbols,
 		processedCoinsInCycle:  make(map[string]bool),
 		buyTradeCandidateCoins: make(map[string]float64),
-		cycleTimeout:           rsiConfig.CloseKlineCycleTimeout,
+		cycleTimeout:           traderConfig.CloseKlineCycleTimeout,
 	}
 }
 
 func (rs *RSIStrategy) Start(ctx context.Context) {
-	rs.ctx, rs.cancel = context.WithCancel(ctx)
 	log.Printf("RSI Strategy started for sub-account: %s\n", rs.subAccountID)
 
 	for {
@@ -91,9 +86,6 @@ func (rs *RSIStrategy) Start(ctx context.Context) {
 }
 
 func (rs *RSIStrategy) Stop() {
-	if rs.cancel != nil {
-		rs.cancel()
-	}
 	if rs.cycleTimer != nil {
 		rs.cycleTimer.Stop()
 	}
@@ -161,7 +153,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 	rs.stateMutex.RUnlock()
 
 	rsiClosed, ok := rs.financial.GetRSIClosed(event.Symbol)
-	if !ok || rsiClosed < rs.rsiConfig.SellThreshold {
+	if !ok || rsiClosed < rs.traderConfig.SellThreshold {
 		return
 	}
 
@@ -198,7 +190,7 @@ func (rs *RSIStrategy) evaluateSellSignal(ctx context.Context, event model.Marke
 }
 
 func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
-	if event.RSI > rs.rsiConfig.BuyThreshold {
+	if event.RSI > rs.traderConfig.BuyThreshold {
 		return false
 	}
 
@@ -208,7 +200,7 @@ func (rs *RSIStrategy) hasSymbolBuySignal(event model.MarketEvent) bool {
 		return false
 	}
 
-	if volumeMedian < rs.rsiConfig.MedianVolumeThreshold {
+	if volumeMedian < rs.traderConfig.MedianVolumeThreshold {
 		return false
 	}
 
@@ -291,13 +283,13 @@ func (rs *RSIStrategy) checkBuyConditions(ctx context.Context, symbol string) mo
 		return model.ConditionCancel
 	}
 
-	if rsiClosed > rs.rsiConfig.BuyThreshold ||
-		volumeMedian < rs.rsiConfig.MedianVolumeThreshold ||
+	if rsiClosed > rs.traderConfig.BuyThreshold ||
+		volumeMedian < rs.traderConfig.MedianVolumeThreshold ||
 		movingAverages.MA50 < movingAverages.MA100 {
 		return model.ConditionCancel
 	}
 
-	if rsiLive > rs.rsiConfig.BuyThreshold {
+	if rsiLive > rs.traderConfig.BuyThreshold {
 		return model.ConditionWait
 	}
 
