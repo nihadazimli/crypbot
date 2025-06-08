@@ -254,15 +254,16 @@ func (bs *BollingerStrategy) checkIndicatorsForSell(zScore float64) model.OrderC
 
 func (bs *BollingerStrategy) executeSellSignal(ctx context.Context, event model.MarketEvent, position *Position) {
 	bs.positionMutex.Lock()
-	if position.State == PositionSelling {
+	currentPosition, exists := bs.positions[event.Symbol]
+	if !exists || currentPosition.State == PositionSelling {
 		bs.positionMutex.Unlock()
 		return
 	}
-	position.State = PositionSelling
+	currentPosition.State = PositionSelling
 	bs.positionMutex.Unlock()
 
 	log.Printf("Bollinger: starting sell for %s (Z=%.2f, price=%v, qty=%.6f @ avg %.4f)",
-		event.Symbol, event.ZScore20, event.Price, position.TotalQuantity, position.AvgPrice)
+		event.Symbol, event.ZScore20, event.Price, currentPosition.TotalQuantity, currentPosition.AvgPrice)
 
 	result, err := bs.trader.ExecuteOrder(
 		ctx,
@@ -282,7 +283,7 @@ func (bs *BollingerStrategy) executeSellSignal(ctx context.Context, event model.
 	} else {
 		log.Printf("Bollinger: Sell completed for %s: Price on hit:%v Result:%+v",
 			event.Symbol, event.Price, result)
-		bs.onSellCompleted(event.Symbol, result, position)
+		bs.onSellCompleted(event.Symbol, result, currentPosition)
 	}
 }
 func (bs *BollingerStrategy) sellConditionsChecker(ctx context.Context, symbol string) model.OrderConditionResult {
@@ -317,8 +318,16 @@ func (bs *BollingerStrategy) onSellCompleted(symbol string, result *ExecutionRes
 	delete(bs.positions, symbol)
 	bs.positionMutex.Unlock()
 
-	log.Printf("Bollinger: Sell completed for %s: %.6f @ %.4f (%.2f USDT) | P&L: %.2f USDT (%.1f%%) | Balance: %.2f USDT",
-		symbol, result.FilledQty, result.AvgPrice, receivedValue, profit, profitPct, newBalance)
+	log.Printf(
+		"Bollinger: Sell completed for %s: %.6f @ %.4f (%.2f USDT) | P&L: %.2f USDT (%.1f%%) | Balance: %.2f USDT",
+		symbol,
+		result.FilledQty,
+		result.AvgPrice,
+		receivedValue,
+		profit,
+		profitPct,
+		newBalance,
+	)
 }
 
 func (bs *BollingerStrategy) getVolumeThreshold() float64 {
