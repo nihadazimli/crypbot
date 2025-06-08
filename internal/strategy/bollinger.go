@@ -46,7 +46,6 @@ type BollingerStrategy struct {
 	trader           TraderService
 	marketEvents     <-chan model.MarketEvent
 	positions        map[string]*Position
-	sellingPositions map[string]bool
 	stateMutex       sync.RWMutex
 	positionMutex    sync.RWMutex
 	minTradeAmount   float64
@@ -78,7 +77,6 @@ func NewBollingerStrategy(
 		trader:           trader,
 		marketEvents:     marketEvents,
 		positions:        make(map[string]*Position),
-		sellingPositions: make(map[string]bool),
 		minTradeAmount:   traderConfig.MinTradeAmount,
 		availableBalance: balanceInfo.AvailableBalance,
 	}, nil
@@ -152,9 +150,6 @@ func (bs *BollingerStrategy) executeBuySignal(ctx context.Context, event model.M
 		log.Printf("Bollinger: Buy completed for %s: Price on hit:%v Result:%+v", event.Symbol, event.Price, result)
 		bs.onBuyCompleted(event.Symbol, result)
 	}
-
-}
-func (bs *BollingerStrategy) handleSellSignal(ctx context.Context, event model.MarketEvent) {
 
 }
 
@@ -235,6 +230,97 @@ func (bs *BollingerStrategy) onBuyCompleted(symbol string, result *ExecutionResu
 
 }
 
+func (bs *BollingerStrategy) handleSellSignal(ctx context.Context, event model.MarketEvent) {
+	bs.positionMutex.RLock()
+	position, hasPosition := bs.positions[event.Symbol]
+	bs.positionMutex.RUnlock()
+
+	if !hasPosition || position.State == PositionSelling {
+		return
+	}
+
+	if bs.checkIndicatorsForSell(event.ZScore20) == model.ConditionMet {
+		go bs.executeSellSignal(ctx, event, position)
+	}
+}
+
+func (bs *BollingerStrategy) checkIndicatorsForSell(zScore float64) model.OrderConditionResult {
+	if zScore < bs.getSellThreshold() {
+		return model.ConditionCancel
+	}
+	return model.ConditionMet
+
+}
+
+func (bs *BollingerStrategy) executeSellSignal(ctx context.Context, event model.MarketEvent, position *Position) {
+	bs.positionMutex.Lock()
+	if position.State == PositionSelling {
+		bs.positionMutex.Unlock()
+		return
+	}
+	position.State = PositionSelling
+	bs.positionMutex.Unlock()
+
+	log.Printf("Bollinger: starting sell for %s (Z=%.2f, price=%v, qty=%.6f @ avg %.4f)",
+		event.Symbol, event.ZScore20, event.Price, position.TotalQuantity, position.AvgPrice)
+
+	result, err := bs.trader.ExecuteOrder(
+		ctx,
+		event.Symbol,
+		model.OrderTypeLimit,
+		model.OrderSideSell,
+		bs.sellConditionsChecker,
+	)
+	if err != nil {
+		log.Printf("Bollinger: Sell failed for %s: %v", event.Symbol, err)
+
+		bs.positionMutex.Lock()
+		if pos, exists := bs.positions[event.Symbol]; exists {
+			pos.State = PositionHolding
+		}
+		bs.positionMutex.Unlock()
+	} else {
+		log.Printf("Bollinger: Sell completed for %s: Price on hit:%v Result:%+v",
+			event.Symbol, event.Price, result)
+		bs.onSellCompleted(event.Symbol, result, position)
+	}
+}
+func (bs *BollingerStrategy) sellConditionsChecker(ctx context.Context, symbol string) model.OrderConditionResult {
+	return model.ConditionMet
+}
+
+func (bs *BollingerStrategy) onSellCompleted(symbol string, result *ExecutionResult, originalPosition *Position) {
+	receivedValue := result.FilledQty * result.AvgPrice
+
+	profit := receivedValue - originalPosition.TotalInvested
+	profitPct := (profit / originalPosition.TotalInvested) * 100
+
+	bs.stateMutex.Lock()
+	bs.availableBalance += receivedValue
+	newBalance := bs.availableBalance
+	bs.stateMutex.Unlock()
+
+	balance, err := bs.trader.GetBalance(context.Background())
+	if err != nil {
+		log.Printf("onSellCompleted - Error while retrieving balance for %s: %v", symbol, err)
+	} else {
+		if math.Abs(balance.AvailableBalance-bs.availableBalance) > bs.getBalanceVerificationThreshold() {
+			log.Printf("Bollinger: Balance drift detected after sell %s, corrected from %.2f to %.2f",
+				symbol, bs.availableBalance, balance.AvailableBalance)
+			bs.stateMutex.Lock()
+			bs.availableBalance = balance.AvailableBalance
+			bs.stateMutex.Unlock()
+		}
+	}
+
+	bs.positionMutex.Lock()
+	delete(bs.positions, symbol)
+	bs.positionMutex.Unlock()
+
+	log.Printf("Bollinger: Sell completed for %s: %.6f @ %.4f (%.2f USDT) | P&L: %.2f USDT (%.1f%%) | Balance: %.2f USDT",
+		symbol, result.FilledQty, result.AvgPrice, receivedValue, profit, profitPct, newBalance)
+}
+
 func (bs *BollingerStrategy) getVolumeThreshold() float64 {
 	return bs.traderConfig.MedianVolumeThreshold
 }
@@ -245,4 +331,9 @@ func (bs *BollingerStrategy) getBuyThreshold() float64 {
 
 func (bs *BollingerStrategy) getBalanceVerificationThreshold() float64 {
 	return bs.traderConfig.BalanceVerificationThreshold
+}
+
+func (bs *BollingerStrategy) getSellThreshold() float64 {
+	return bs.traderConfig.SellThreshold
+
 }
