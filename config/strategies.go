@@ -60,8 +60,10 @@ type BollingerTraderConfig struct {
 	CommonTraderConfig `yaml:",inline"`
 
 	// Bollinger-specific parameters
-	BuyThreshold  float64 `yaml:"buy_threshold"`
-	SellThreshold float64 `yaml:"sell_threshold"`
+	MinTradeAmount               float64 `yaml:"min_trade_amount"`
+	BalanceVerificationThreshold float64 `yaml:"balance_verification_threshold"`
+	BuyThreshold                 float64 `yaml:"buy_threshold"`
+	SellThreshold                float64 `yaml:"sell_threshold"`
 }
 
 func (b BollingerTraderConfig) Validate() error {

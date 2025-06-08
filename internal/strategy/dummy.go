@@ -100,7 +100,7 @@ func (ids *InteractiveDummyStrategy) runInteractiveTest(ctx context.Context) err
 }
 
 func (ids *InteractiveDummyStrategy) makeInteractiveChecker() model.ConditionChecker {
-	return func(ctx context.Context, symbol string) model.OrderConditionResult {
+	return func(symbol string) model.OrderConditionResult {
 		ids.mutex.Lock()
 		defer ids.mutex.Unlock()
 

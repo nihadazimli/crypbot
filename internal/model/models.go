@@ -2,7 +2,6 @@
 package model
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -61,7 +60,6 @@ type WSInternalKline struct {
 type MarketEvent struct {
 	Symbol    string
 	Price     float64
-	Volume    float64
 	RSI       float64
 	IsClosed  bool
 	Timestamp float64
@@ -96,7 +94,7 @@ type MovingAverage struct {
 	MA100 float64
 	MA50  float64
 }
-type ConditionChecker func(ctx context.Context, symbol string) OrderConditionResult
+type ConditionChecker func(symbol string) OrderConditionResult
 
 type OrderType string
 

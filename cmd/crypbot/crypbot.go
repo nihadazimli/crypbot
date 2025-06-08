@@ -82,12 +82,42 @@ func main() {
 			log.Println("RSI Strategy started successfully!")
 
 		case model.StrategyBollinger:
-			_, err := bybit.NewTradingClientForStrategy("bollinger")
+			bollingerTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyBollinger)
 			if err != nil {
 				log.Printf("Failed to start exchange for bolinger. Err:%v", err)
 				return
 			}
-			log.Printf("Not implemented yet!")
+			bollingerConfig, err := config.GetBollingerConfig()
+			if err != nil {
+				log.Printf("Failed to load config for Bollinger. Err:%v", err)
+				return
+			}
+			bollingerOrderManager := order.NewOrderManager(bollingerTradingClient)
+			bollingerTrader := trader.NewTrader(
+				&bollingerConfig.Trader.CommonTraderConfig,
+				bollingerTradingClient,
+				financialEngine,
+				bollingerOrderManager,
+			)
+			bollingerEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
+			eventRouter.RegisterStrategy(model.StrategyBollinger, bollingerEventsChan)
+			bollingerStrategy, err := strategy.NewBollingerStrategy(
+				bollingerConfig.Credentials.SubAccountID,
+				financialEngine,
+				bollingerTrader,
+				bollingerEventsChan,
+			)
+			if err != nil {
+				log.Printf("Failed to create Bollinger strategy. Err:%v", err)
+				return
+			}
+			go func() {
+				err := bollingerStrategy.Start(ctx)
+				if err != nil {
+					log.Printf("main - %v", err)
+				}
+			}()
+			log.Println("Bollinger Strategy started successfully!")
 		case model.StrategyDummy:
 			dummyTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyDummy)
 			if err != nil {

@@ -4,7 +4,7 @@ package numutils
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -79,7 +79,7 @@ func FindMedian(values []float64) float64 {
 	// Make a copy of the slice to avoid altering the original data
 	sortedValues := make([]float64, n)
 	copy(sortedValues, values)
-	sort.Float64s(sortedValues)
+	slices.Sort(sortedValues)
 
 	// Finding the median
 	midpoint := n / 2 // Get the middle index
