@@ -54,12 +54,12 @@ type BollingerStrategy struct {
 }
 
 func NewBollingerStrategy(
-	subAccountID string,
 	financial FinancialService,
 	trader TraderService,
 	marketEvents <-chan model.MarketEvent,
 ) (*BollingerStrategy, error) {
 	traderConfig, err := config.GetBollingerTraderConfig()
+	bollingerConfig, err := config.GetBollingerConfig()
 	if err != nil {
 		log.Printf("Bollinger - Cannot get bollinger config, fix config file!")
 		return nil, err
@@ -71,7 +71,7 @@ func NewBollingerStrategy(
 	}
 
 	return &BollingerStrategy{
-		subAccountID:     subAccountID,
+		subAccountID:     bollingerConfig.Credentials.SubAccountID,
 		traderConfig:     traderConfig,
 		financial:        financial,
 		trader:           trader,

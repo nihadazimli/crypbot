@@ -8,12 +8,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/nihadazimli/crypbot/internal/strategy"
-
 	"github.com/nihadazimli/crypbot/config"
 	"github.com/nihadazimli/crypbot/internal/exchange"
+	"github.com/nihadazimli/crypbot/internal/exchange/bybit"
 	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/internal/order"
+	"github.com/nihadazimli/crypbot/internal/strategy"
 	"github.com/nihadazimli/crypbot/pkg/numutils"
 )
 
@@ -39,17 +39,26 @@ type Trader struct {
 }
 
 func NewTrader(
-	cfg *config.CommonTraderConfig,
-	market exchange.TradingClient,
 	financial FinancialService,
-	order order.OrderManager,
-) *Trader {
-	return &Trader{
-		cfg:       cfg,
-		exchange:  market,
-		financial: financial,
-		order:     order,
+	strategyID model.StrategyID,
+) (*Trader, error) {
+
+	tradingClient, err := bybit.NewTradingClientForStrategy(strategyID)
+	if err != nil {
+		return nil, err
 	}
+	orderManager := order.NewOrderManager(tradingClient)
+
+	commonTraderConfig, err := config.GetCommonTraderConfig(strategyID)
+	if err != nil {
+		return nil, err
+	}
+	return &Trader{
+		cfg:       commonTraderConfig,
+		exchange:  tradingClient,
+		financial: financial,
+		order:     orderManager,
+	}, nil
 }
 
 func (tc *Trader) GetBalance(ctx context.Context) (*strategy.BalanceInfo, error) {

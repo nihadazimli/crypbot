@@ -46,20 +46,21 @@ type RSIStrategy struct {
 }
 
 func NewRSIStrategy(
-	subAccountID string,
 	financial FinancialService,
 	trader TraderService,
 	marketEvents <-chan model.MarketEvent,
 	symbols []string,
 ) *RSIStrategy {
 	traderConfig, err := config.GetRSITraderConfig()
+	rsiConfig, err := config.GetRSIConfig()
+
 	if err != nil {
 		log.Printf("RSI Strategy - Cannot get rsi config, fix config file!")
 		return nil
 	}
 	return &RSIStrategy{
 		traderConfig:           traderConfig,
-		subAccountID:           subAccountID,
+		subAccountID:           rsiConfig.Credentials.SubAccountID,
 		financial:              financial,
 		trader:                 trader,
 		marketEvents:           marketEvents,

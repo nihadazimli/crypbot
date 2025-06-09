@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"time"
+
+	"github.com/nihadazimli/crypbot/internal/model"
 )
 
 type CredentialsConfig struct {
@@ -87,4 +89,32 @@ type DummyConfig struct {
 
 type DummyTraderConfig struct {
 	CommonTraderConfig `yaml:",inline"`
+}
+
+func GetCommonTraderConfig(strategyID model.StrategyID) (*CommonTraderConfig, error) {
+	switch strategyID {
+	case model.StrategyRSI:
+		rsiConfig, err := GetRSIConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get RSI config: %w", err)
+		}
+		return &rsiConfig.Trader.CommonTraderConfig, nil
+
+	case model.StrategyBollinger:
+		bollingerConfig, err := GetBollingerConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Bollinger config: %w", err)
+		}
+		return &bollingerConfig.Trader.CommonTraderConfig, nil
+
+	case model.StrategyDummy:
+		dummyConfig, err := GetDummyConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Dummy config: %w", err)
+		}
+		return &dummyConfig.Trader.CommonTraderConfig, nil
+
+	default:
+		return nil, fmt.Errorf("unknown strategy ID: %s", strategyID)
+	}
 }

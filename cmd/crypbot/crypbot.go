@@ -9,17 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nihadazimli/crypbot/internal/order"
+	"github.com/nihadazimli/crypbot/config"
+	"github.com/nihadazimli/crypbot/internal/exchange/bybit"
+	"github.com/nihadazimli/crypbot/internal/financial"
+	"github.com/nihadazimli/crypbot/internal/model"
 	"github.com/nihadazimli/crypbot/internal/router"
 	"github.com/nihadazimli/crypbot/internal/strategy"
 	"github.com/nihadazimli/crypbot/internal/trader"
-
-	"github.com/nihadazimli/crypbot/config"
-	"github.com/nihadazimli/crypbot/internal/exchange/bybit"
-
-	"github.com/nihadazimli/crypbot/internal/model"
-
-	"github.com/nihadazimli/crypbot/internal/financial"
 )
 
 func main() {
@@ -49,29 +45,15 @@ func main() {
 	for strategyName := range enabledStrategies {
 		switch strategyName {
 		case model.StrategyRSI:
-			rsiTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyRSI)
+			rsiTrader, err := trader.NewTrader(financialEngine, model.StrategyRSI)
 			if err != nil {
-				log.Printf("Failed to start exchange for RSI. Err:%v", err)
+				log.Printf("Failed to create RSI trader. Err:%v", err)
 				return
 			}
-			rsiConfig, err := config.GetRSIConfig()
-			if err != nil {
-				log.Printf("Failed to load config for RSI. Err:%v", err)
-				return
-			}
-			rsiOrderManager := order.NewOrderManager(rsiTradingClient)
-			rsiTrader := trader.NewTrader(
-				&rsiConfig.Trader.CommonTraderConfig,
-				rsiTradingClient,
-				financialEngine,
-				rsiOrderManager,
-			)
-
 			rsiEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
 			eventRouter.RegisterStrategy(model.StrategyRSI, rsiEventsChan)
 
 			rsiStrategy := strategy.NewRSIStrategy(
-				rsiConfig.Credentials.SubAccountID,
 				financialEngine,
 				rsiTrader,
 				rsiEventsChan,
@@ -82,27 +64,15 @@ func main() {
 			log.Println("RSI Strategy started successfully!")
 
 		case model.StrategyBollinger:
-			bollingerTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyBollinger)
+			bollingerTrader, err := trader.NewTrader(financialEngine, model.StrategyBollinger)
 			if err != nil {
-				log.Printf("Failed to start exchange for bolinger. Err:%v", err)
+				log.Printf("Failed to create Bollinger trader. Err:%v", err)
 				return
 			}
-			bollingerConfig, err := config.GetBollingerConfig()
-			if err != nil {
-				log.Printf("Failed to load config for Bollinger. Err:%v", err)
-				return
-			}
-			bollingerOrderManager := order.NewOrderManager(bollingerTradingClient)
-			bollingerTrader := trader.NewTrader(
-				&bollingerConfig.Trader.CommonTraderConfig,
-				bollingerTradingClient,
-				financialEngine,
-				bollingerOrderManager,
-			)
 			bollingerEventsChan := make(chan model.MarketEvent, len(cfg.Symbols)*4)
 			eventRouter.RegisterStrategy(model.StrategyBollinger, bollingerEventsChan)
+
 			bollingerStrategy, err := strategy.NewBollingerStrategy(
-				bollingerConfig.Credentials.SubAccountID,
 				financialEngine,
 				bollingerTrader,
 				bollingerEventsChan,
@@ -119,26 +89,14 @@ func main() {
 			}()
 			log.Println("Bollinger Strategy started successfully!")
 		case model.StrategyDummy:
-			dummyTradingClient, err := bybit.NewTradingClientForStrategy(model.StrategyDummy)
-			if err != nil {
-				log.Printf("Failed to start exchange for Dummy. Err:%v", err)
-				return
-			}
-
-			dummyConfig, err := config.GetDummyConfig()
-			if err != nil {
-				log.Printf("Failed to load config for Dummy. Err:%v", err)
-				return
-			}
-
-			dummyOrderManager := order.NewOrderManager(dummyTradingClient)
-			dummyTrader := trader.NewTrader(
-				&dummyConfig.Trader.CommonTraderConfig,
-				dummyTradingClient,
+			dummyTrader, err := trader.NewTrader(
 				financialEngine,
-				dummyOrderManager,
+				model.StrategyDummy,
 			)
-
+			if err != nil {
+				log.Printf("Failed to create Dummy trader. Err:%v", err)
+				return
+			}
 			dummyStrategy := strategy.NewInteractiveDummyStrategy(dummyTrader, financialEngine, cfg.Symbols[0])
 			go func() {
 				err := dummyStrategy.Start(ctx)
