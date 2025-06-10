@@ -790,7 +790,7 @@ func (tc *TradingClient) handleOrderMessage(data json.RawMessage) error {
 			Status:       orderStatus,
 			Symbol:       order.Symbol,
 			Price:        order.Price,
-			AvgPrice:     order.AvgPrice,
+			AvgPrice:     float64(order.AvgPrice),
 			Side:         model.ParseOrderSide(order.Side),
 			CreatedAt:    millisecondsToTime(order.CreatedTime),
 			UpdatedAt:    millisecondsToTime(order.UpdatedTime),
