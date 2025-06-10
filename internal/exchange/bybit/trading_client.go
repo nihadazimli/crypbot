@@ -22,18 +22,18 @@ import (
 
 type OrderInfoResult struct {
 	List []struct {
-		OrderId     string  `json:"orderId"`
-		Price       float64 `json:"price,string"`
-		AvgPrice    float64 `json:"avgPrice,string"`
-		Qty         float64 `json:"qty,string"`
-		LeavesQty   float64 `json:"leavesQty,string"`
-		CumExecQty  float64 `json:"cumExecQty,string"`
-		Symbol      string  `json:"symbol"`
-		Status      string  `json:"orderStatus"`
-		Side        string  `json:"side"`
-		CreatedTime int     `json:"createdTime,string"`
-		UpdatedTime int     `json:"updatedTime,string"`
-		Type        string  `json:"orderType"`
+		OrderId     string          `json:"orderId"`
+		Price       float64         `json:"price,string"`
+		AvgPrice    model.SafeFloat `json:"avgPrice"`
+		Qty         float64         `json:"qty,string"`
+		LeavesQty   float64         `json:"leavesQty,string"`
+		CumExecQty  float64         `json:"cumExecQty,string"`
+		Symbol      string          `json:"symbol"`
+		Status      string          `json:"orderStatus"`
+		Side        string          `json:"side"`
+		CreatedTime int             `json:"createdTime,string"`
+		UpdatedTime int             `json:"updatedTime,string"`
+		Type        string          `json:"orderType"`
 	}
 }
 type OrderSource int
@@ -91,11 +91,11 @@ type InstrumentResult struct {
 
 type WalletResult struct {
 	List []struct {
-		TotalAvailableBalance string `json:"totalAvailableBalance"`
-		TotalWalletBalance    string `json:"totalWalletBalance"`
+		TotalAvailableBalance string          `json:"totalAvailableBalance"`
+		TotalWalletBalance    model.SafeFloat `json:"totalWalletBalance"`
 		Coin                  []struct {
-			WalletBalance string `json:"walletBalance"`
-			UsdValue      string `json:"usdValue"`
+			WalletBalance model.SafeFloat `json:"walletBalance"`
+			UsdValue      model.SafeFloat `json:"usdValue"`
 		} `json:"coin"`
 	} `json:"list"`
 }
@@ -154,11 +154,7 @@ func (tc *TradingClient) GetAccountBalance(ctx context.Context) (exchange.Accoun
 		return exchange.AccountBalanceResult{}, err
 	}
 
-	totalAvailableBalance, err := parseFloatSafe(walletResult.List[0].TotalWalletBalance)
-
-	if err != nil {
-		return exchange.AccountBalanceResult{}, err
-	}
+	totalAvailableBalance := float64(walletResult.List[0].TotalWalletBalance)
 
 	return exchange.AccountBalanceResult{Total: totalAvailableBalance}, nil
 }
@@ -661,14 +657,9 @@ func (tc *TradingClient) GetSymbolBalance(ctx context.Context, symbol string) (e
 		return exchange.SymbolBalanceResult{}, fmt.Errorf("cannot get balance for coin %s", symbol)
 	}
 
-	totalSymbolBalance, err := parseFloatSafe(walletResult.List[0].Coin[0].WalletBalance)
-	if err != nil {
-		return exchange.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
-	}
-	usdValue, err := parseFloatSafe(walletResult.List[0].Coin[0].UsdValue)
-	if err != nil {
-		return exchange.SymbolBalanceResult{}, fmt.Errorf("error parsing total symbol wallet balance for %s", symbol)
-	}
+	totalSymbolBalance := float64(walletResult.List[0].Coin[0].WalletBalance)
+	usdValue := float64(walletResult.List[0].Coin[0].UsdValue)
+
 	symbolBalanceResponse := exchange.SymbolBalanceResult{
 		WalletBalance: totalSymbolBalance,
 		UsdValue:      usdValue,
@@ -903,7 +894,7 @@ func (tc *TradingClient) parseOrderResponse(
 				OrderId:   entry.OrderId,
 				Symbol:    entry.Symbol,
 				Price:     entry.Price,
-				AvgPrice:  entry.AvgPrice,
+				AvgPrice:  float64(entry.AvgPrice),
 				Qty:       entry.Qty,
 				LeavesQty: entry.LeavesQty,
 				Status:    orderStatus,

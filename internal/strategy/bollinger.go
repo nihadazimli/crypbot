@@ -85,7 +85,7 @@ func NewBollingerStrategy(
 func (bs *BollingerStrategy) Start(ctx context.Context) error {
 	log.Printf("Bollinger started for sub-account: %s\n", bs.subAccountID)
 
-	if bs.availableBalance < 0 {
+	if bs.availableBalance < bs.minTradeAmount {
 		return fmt.Errorf("invalid available balance: %.2f", bs.availableBalance)
 	}
 	for {

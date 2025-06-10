@@ -4,6 +4,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -197,4 +198,26 @@ func ParseStrategyID(strategy string) StrategyID {
 	default:
 		return StrategyUnknown
 	}
+}
+
+type SafeFloat float64
+
+func (sf *SafeFloat) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	if s == "" {
+		*sf = 0.0
+		return nil
+	}
+
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return err
+	}
+
+	*sf = SafeFloat(f)
+	return nil
 }
