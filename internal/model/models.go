@@ -26,6 +26,7 @@ type BybitWSOrderData struct {
 	Qty         float64 `json:"qty,string"`
 	CumExecQty  float64 `json:"cumExecQty,string"`
 	Price       float64 `json:"price,string"`
+	AvgPrice    float64 `json:"avgPrice,string"`
 	Status      string  `json:"orderStatus"`
 	Symbol      string  `json:"symbol"`
 	LeavesQty   float64 `json:"leavesQty,string"`
