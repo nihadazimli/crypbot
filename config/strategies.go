@@ -72,11 +72,11 @@ func (b BollingerTraderConfig) Validate() error {
 	if b.OrderCheckInterval < time.Second {
 		return fmt.Errorf("order_check_interval too short: %v", b.OrderCheckInterval)
 	}
-	if b.BuyThreshold <= 0 {
-		return fmt.Errorf("buy_threshold must be positive")
+	if b.BuyThreshold >= 0 {
+		return fmt.Errorf("buy_threshold must be negative")
 	}
-	if b.SellThreshold <= 0 {
-		return fmt.Errorf("sell_threshold must be positive")
+	if b.SellThreshold >= 0 {
+		return fmt.Errorf("sell_threshold must be negative")
 	}
 	return nil
 }
