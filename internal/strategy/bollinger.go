@@ -171,15 +171,15 @@ func (bs *BollingerStrategy) buyConditionsChecker(symbol string) model.OrderCond
 		log.Printf("Bollinger - can't retrieve zscore for %s", symbol)
 		return model.ConditionCancel
 	}
-	volume, ok := bs.financial.GetVolumeValueMedian(symbol)
+	volumeMedian, ok := bs.financial.GetVolumeValueMedian(symbol)
 	if !ok {
-		log.Printf("Bollinger - can't retrieve volume for %s", symbol)
+		log.Printf("Bollinger - can't retrieve volumeMedian for %s", symbol)
 		return model.ConditionCancel
 	}
 	if zScore > bs.getBuyThreshold() {
 		return model.ConditionCancel
 	}
-	if volume < bs.getVolumeThreshold() {
+	if volumeMedian < bs.getVolumeMedianThreshold() {
 		return model.ConditionCancel
 	}
 
@@ -327,7 +327,7 @@ func (bs *BollingerStrategy) onSellCompleted(symbol string, result *ExecutionRes
 	)
 }
 
-func (bs *BollingerStrategy) getVolumeThreshold() float64 {
+func (bs *BollingerStrategy) getVolumeMedianThreshold() float64 {
 	return bs.traderConfig.MedianVolumeThreshold
 }
 
