@@ -85,6 +85,7 @@ type CoinMetrics struct {
 	RSILive           float64
 	VolumeValueMedian float64
 	ZScore20          float64
+	PrevZScore        float64
 }
 
 type Precision struct {
