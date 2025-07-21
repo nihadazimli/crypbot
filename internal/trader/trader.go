@@ -174,7 +174,7 @@ func (tc *Trader) processOrderUpdate(
 			RequestedQty: currentOrder.Quantity,
 			FilledQty:    currentOrder.FilledQty,
 			AvgPrice:     currentOrder.AvgPrice,
-		}, false, err
+		}, false, fmt.Errorf("monitor order - order is unsuccessful. Order Status: %v. Err: %v", currentOrder.Status, err)
 	default:
 		log.Printf("Order Status: %v This status is not handled\n", currentOrder.Status)
 		err = tc.gracefullyFinishOrder(ctx, symbol)

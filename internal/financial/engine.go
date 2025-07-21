@@ -165,6 +165,7 @@ func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 	rsi, _ := fe.GetRSIClosed(klineDatapoint.Symbol)
 
 	zScore, _ := fe.GetZScore(klineDatapoint.Symbol)
+	prevZScore := fe.Coins[klineDatapoint.Symbol].PrevZScore
 
 	marketEvent := model.MarketEvent{
 		Symbol:    klineDatapoint.Symbol,
@@ -175,6 +176,12 @@ func (fe *Engine) sendMarketEvent(klineDatapoint model.WSInternalKline) {
 		Timestamp: float64(time.Now().Unix()),
 	}
 
+	if zScore < prevZScore &&
+		zScore <= fe.cfg.Strategies.Bollinger.Trader.BuyThreshold &&
+		prevZScore >= fe.cfg.Strategies.Bollinger.Trader.BuyThreshold {
+		log.Printf("Financial Engine: %s hit Zscore buy threshold\n Current Z Value:%.6f\nPrevious Z Value:%.6f",
+			marketEvent.Symbol, zScore, prevZScore)
+	}
 	select {
 	case fe.marketEventsChan <- marketEvent:
 	default:
@@ -234,6 +241,7 @@ func (fe *Engine) calculateAndStoreMarketMetrics(symbol string) error {
 	zScore := numutils.ZScore(coinMetrics.ClosePriceClosed, fe.cfg.MarketConstants.ZScorePeriod)
 
 	fe.Coins[symbol].RSIClosed = rsi
+	fe.Coins[symbol].PrevZScore = fe.Coins[symbol].ZScore20
 	fe.Coins[symbol].ZScore20 = zScore
 	fe.Coins[symbol].VolumeValueMedian = volumeValueMedian
 
