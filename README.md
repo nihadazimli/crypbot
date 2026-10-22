@@ -2,8 +2,6 @@
 
 An event-driven, automated crypto trading system written in Go. It streams real-time market data from **Bybit**, computes technical indicators on the fly for ~100 USDT spot pairs, and runs multiple trading strategies in parallel, each with its own sub-account, order lifecycle and risk controls.
 
-Built as a side project together with a quant partner: I designed and built the engineering platform (data ingestion, indicator engine, order execution, deployment); my partner led strategy research and backtesting. It traded live with real capital.
-
 ## Highlights
 
 - **Real-time market data pipeline**: WebSocket kline streams for 100+ symbols, sharded across connections, with keep-alive pings and automatic reconnection. Historical klines are backfilled over REST on startup so indicators are warm before trading begins.
